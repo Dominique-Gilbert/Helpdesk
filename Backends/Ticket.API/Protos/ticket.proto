@@ -1,0 +1,92 @@
+syntax = "proto3";
+
+option csharp_namespace = "Helpdesk.Tickets.Grpc";
+package helpdesk.tickets;
+
+import "google/protobuf/timestamp.proto";
+
+// The ticket lifecycle and its comments. This is the only contract Ticket.API exposes;
+// everything else about this service is an implementation detail.
+service TicketGrpc {
+  // Category and priority are set at creation - this is the call that publishes Ticket.Created.
+  rpc CreateTicket (CreateTicketRequest) returns (TicketResponse);
+  rpc GetTicket (TicketRequest) returns (TicketResponse);
+  rpc ListTickets (ListTicketsRequest) returns (TicketListResponse);
+  rpc UpdateTicket (UpdateTicketRequest) returns (TicketResponse);
+  rpc CloseTicket (TicketRequest) returns (TicketResponse);
+  rpc AddComment (AddCommentRequest) returns (TicketResponse);
+}
+
+// Coarse-grained messages on purpose: a handful of shared request/response shapes
+// rather than one bespoke pair per rpc.
+message TicketRequest {
+  string id = 1;
+}
+
+message CreateTicketRequest {
+  string title = 1;
+  string description = 2;
+  string category = 3;      // TicketCategory name, e.g. "Hardware"
+  string priority = 4;      // TicketPriority name, e.g. "High"
+  string requested_by = 5;
+  string comment = 6;       // optional; saved as the first comment and used by Assignment.API for keyword routing
+}
+
+message UpdateTicketRequest {
+  string id = 1;
+  string title = 2;
+  string description = 3;
+  string status = 4;
+  string priority = 5;
+}
+
+message AddCommentRequest {
+  string ticket_id = 1;
+  string author = 2;
+  string body = 3;
+  bool is_internal = 4;
+}
+
+message ListTicketsRequest {
+  string status = 1;        // optional filter, empty = any
+  string priority = 2;      // optional filter, empty = any
+  int32 page = 3;           // 1-based; 0 is treated as 1
+  int32 page_size = 4;      // 0 is treated as 25, capped at 200
+}
+
+message CommentMessage {
+  string id = 1;
+  string ticket_id = 2;
+  string author = 3;
+  string body = 4;
+  bool is_internal = 5;
+  google.protobuf.Timestamp created_at_utc = 6;
+}
+
+message TicketResponse {
+  string id = 1;
+  string reference = 2;
+  string title = 3;
+  string description = 4;
+  string requested_by = 5;
+  string category = 6;
+  string priority = 7;
+  string status = 8;
+  bool sla_breached = 9;
+  google.protobuf.Timestamp sla_breached_at_utc = 10;
+  google.protobuf.Timestamp closed_at_utc = 11;
+  google.protobuf.Timestamp created_at_utc = 12;
+  google.protobuf.Timestamp updated_at_utc = 13;
+  repeated CommentMessage comments = 14;
+  string requested_by_user_id = 15;   // empty for tickets created before this field existed
+  string requested_by_username = 16;  // login username, empty for tickets created before this field existed
+  string requested_by_role = 17;      // role at time of creation, empty for tickets created before this field existed
+  string client_id = 18;              // requester's Client at creation time, empty if none/not set
+}
+
+message TicketListResponse {
+  repeated TicketResponse tickets = 1;
+  int32 total = 2;
+  int32 page = 3;
+  int32 page_size = 4;
+}

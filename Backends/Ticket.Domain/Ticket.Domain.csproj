@@ -1,0 +1,12 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <!-- Folder names come from the brief; namespaces are pluralised so that no namespace
+         segment collides with an entity type name (a namespace called Ticket next to a
+         class called Ticket is CS0118 waiting to happen). -->
+    <RootNamespace>Helpdesk.Tickets.Domain</RootNamespace>
+    <AssemblyName>Ticket.Domain</AssemblyName>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\..\Shared\Helpdesk.Contracts\Helpdesk.Contracts.csproj" />
+  </ItemGroup>
+</Project>

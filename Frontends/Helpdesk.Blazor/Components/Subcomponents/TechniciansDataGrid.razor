@@ -1,0 +1,56 @@
+@using Helpdesk.Gateway.Dto
+
+<MudDataGrid Items="@Items" Hover="true" Dense="true" FixedHeader="true" RowsPerPage="15" Class="@($"helpdesk-table {Class}")">
+    <Columns>
+        <PropertyColumn Property="x => x.fullName" Title="Name" />
+        <PropertyColumn Property="x => x.team" Title="Team" />
+        <TemplateColumn Title="Skills" Sortable="false">
+            <CellTemplate>
+                <MudText Typo="Typo.caption" Color="Color.Secondary">@string.Join(", ", context.Item.skills)</MudText>
+            </CellTemplate>
+        </TemplateColumn>
+        <TemplateColumn Title="Load" Sortable="false">
+            <CellTemplate>@context.Item.activeAssignments / @context.Item.maxConcurrent</CellTemplate>
+        </TemplateColumn>
+        <TemplateColumn Title="Available" Sortable="false">
+            <CellTemplate>
+                @* hasCapacity folds two different reasons into one boolean (isAvailable=false,
+                   or genuinely at MaxConcurrent) - a technician taken off routing on purpose
+                   (e.g. their role just changed away from Technician) would otherwise show
+                   "full" at 0/5 load, which reads as a bug rather than the intended state. *@
+                @if (!context.Item.isAvailable)
+                {
+                    <MudChip T="string" Size="Size.Small" Color="Color.Default">unavailable</MudChip>
+                }
+                else if (context.Item.hasCapacity)
+                {
+                    <MudChip T="string" Size="Size.Small" Color="Color.Success">has capacity</MudChip>
+                }
+                else
+                {
+                    <MudChip T="string" Size="Size.Small" Color="Color.Warning">full</MudChip>
+                }
+            </CellTemplate>
+        </TemplateColumn>
+        <TemplateColumn Title="" Sortable="false">
+            <CellTemplate>
+                <MudIconButton Icon="@Icons.Material.Filled.Visibility" Size="Size.Small"
+                               OnClick="() => OnView.InvokeAsync(context.Item)" />
+            </CellTemplate>
+        </TemplateColumn>
+    </Columns>
+    <PagerContent>
+        <MudDataGridPager T="DtoTechnician" />
+    </PagerContent>
+</MudDataGrid>
+
+@code {
+    [Parameter, EditorRequired]
+    public IEnumerable<DtoTechnician> Items { get; set; } = [];
+
+    [Parameter]
+    public string? Class { get; set; }
+
+    [Parameter]
+    public EventCallback<DtoTechnician> OnView { get; set; }
+}

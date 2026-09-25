@@ -1,0 +1,21 @@
+@* Wraps a page's content and bounces anyone who isn't BaseRole to /tickets - same reasoning as
+   AdminOnly, but exclusive: even Admin does not get this page. Clients is a BaseRole-only
+   feature (see NavMenu, which hides the nav link itself the same way), not an
+   Admin-plus-BaseRole one like every other Admin-gated page. *@
+<AuthorizeView Context="restrictAuthContext">
+    <Authorized>
+        @if (!restrictAuthContext.User.IsInRole("BaseRole"))
+        {
+            <RedirectToTickets />
+        }
+        else
+        {
+            @ChildContent
+        }
+    </Authorized>
+</AuthorizeView>
+
+@code {
+    [Parameter]
+    public RenderFragment? ChildContent { get; set; }
+}

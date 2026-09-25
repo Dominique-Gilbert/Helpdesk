@@ -1,0 +1,298 @@
+@using Helpdesk.Blazor.Repositories
+@using Helpdesk.Gateway.Dto
+@inject UserRepo Users
+@inject AssignmentRepo Assignments
+@inject ClientRepo ClientsRepo
+
+@* Same shell as TicketActionsDrawer - create when User is null, edit otherwise. Username is
+   fixed once a user exists (it's the login identity); password is required on create and
+   optional on edit ("leave blank to keep the current one").
+   A Technician-role User always owns a real Technician record - never a link picked from a
+   list of existing ones. Creating one here creates both together; editing one here edits the
+   User and its Technician's details (team/skills/capacity/availability) in the same form. *@
+<DetailDrawer Title="@(User is null ? "New user" : $"Edit {User.username}")" Open="Open" OpenChanged="OpenChanged">
+    <ChildContent>
+        <MudStack Spacing="3">
+            @if (error is not null)
+            {
+                <MudAlert Severity="Severity.Error" Dense="true">@error</MudAlert>
+            }
+
+            <MudTextField @bind-Value="username" Label="Username" Disabled="@(User is not null)" FullWidth="true"
+                          MaxLength="64" Immediate="true" Validation="@((Func<string, IEnumerable<string>>)ValidateUsername)" />
+            <MudTextField @bind-Value="password" Label="@(User is null ? "Password" : "New password (leave blank to keep current)")"
+                          InputType="InputType.Password" FullWidth="true" />
+            <MudTextField @bind-Value="fullName" Label="Full name" FullWidth="true"
+                          MaxLength="128" Immediate="true" Validation="@((Func<string, IEnumerable<string>>)ValidateFullName)" />
+
+            <MudSelect T="string" Value="role" ValueChanged="OnRoleChanged" Label="Role" FullWidth="true">
+                <MudSelectItem Value="@("Admin")">Admin</MudSelectItem>
+                <MudSelectItem Value="@("BaseRole")">BaseRole</MudSelectItem>
+                <MudSelectItem Value="@("Technician")">Technician</MudSelectItem>
+                <MudSelectItem Value="@("Support")">Support</MudSelectItem>
+            </MudSelect>
+
+            @* BaseRole-exclusive: only BaseRole may set or change which Client a User belongs
+               to - an Admin's own choice here would be silently discarded server-side anyway
+               (see Gateway's UserService), so it isn't even offered to them. Never shown for a
+               BaseRole-role User either - BaseRole belongs to no Client, it's the platform owner. *@
+            @if (IsBaseRoleViewer && role != "BaseRole")
+            {
+                <MudSelect T="Guid?" @bind-Value="clientId" Label="Client" FullWidth="true"
+                           HelperText="@(role == "Admin" ? "The first Admin for a new Client - pick it here." : null)">
+                    <MudSelectItem T="Guid?" Value="@((Guid?)null)">None</MudSelectItem>
+                    @foreach (var client in clients)
+                    {
+                        <MudSelectItem T="Guid?" Value="@client.id">@client.company</MudSelectItem>
+                    }
+                </MudSelect>
+            }
+
+            @if (role == "Technician")
+            {
+                @if (loadingTechnician)
+                {
+                    <MudText Color="Color.Secondary">Loading technician details&hellip;</MudText>
+                }
+                else
+                {
+                    <MudDivider Class="my-1" />
+                    <MudText Typo="Typo.subtitle2">Technician details</MudText>
+
+                    <MudTextField @bind-Value="technicianEmail" Label="Email" FullWidth="true" MaxLength="256" />
+
+                    <MudSelect @bind-Value="technicianTeam" Label="Team" FullWidth="true">
+                        @foreach (var team in Teams)
+                        {
+                            <MudSelectItem Value="@team">@team</MudSelectItem>
+                        }
+                    </MudSelect>
+
+                    <MudTextField @bind-Value="technicianSkills" Label="Skills (comma-separated)" Placeholder="laptops, printers" FullWidth="true" />
+
+                    <MudNumericField @bind-Value="technicianMaxConcurrent" Label="Max concurrent tickets" Min="1" FullWidth="true" />
+
+                    @if (User is not null)
+                    {
+                        <MudSwitch @bind-Value="technicianIsAvailable" Color="Color.Primary" Label="Available for new assignments" />
+                    }
+
+                    <MudText Typo="Typo.caption" Color="Color.Secondary" Class="mt-2">
+                        Category levels - drives level+keyword routing (see Routing Rules for the fallback path
+                        used by categories with no leveled technicians). "None" means this technician is never
+                        considered for that category via level routing.
+                    </MudText>
+                    <MudStack Spacing="1">
+                        @foreach (var category in Categories)
+                        {
+                            <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="2">
+                                <MudText Typo="Typo.body2" Style="min-width:100px;">@category</MudText>
+                                <MudSelect T="string" Value="@categoryLevels[category]" ValueChanged="@(v => categoryLevels[category] = v)" Dense="true" Style="max-width:160px;">
+                                    @foreach (var level in Levels)
+                                    {
+                                        <MudSelectItem Value="@level">@level</MudSelectItem>
+                                    }
+                                </MudSelect>
+                            </MudStack>
+                        }
+                    </MudStack>
+                }
+            }
+
+            @if (User is not null)
+            {
+                <MudSwitch @bind-Value="isActive" Color="Color.Primary" Label="Active" />
+            }
+        </MudStack>
+    </ChildContent>
+    <FooterContent>
+        <MudButton Variant="Variant.Filled" Color="Color.Primary" FullWidth="true" Disabled="@busy" OnClick="SaveAsync">
+            @(busy ? "Saving..." : "Save")
+        </MudButton>
+    </FooterContent>
+</DetailDrawer>
+
+@code {
+    private static readonly string[] Teams = ["Hardware", "Software", "Network", "Escalations", "Service Desk"];
+    private static readonly string[] Categories = ["General", "Hardware", "Software", "Network", "Access", "Facilities"];
+    private static readonly string[] Levels = ["None", "Low", "Normal", "High", "Critical"];
+    private static readonly CreateUserValidator createValidator = new();
+    private static readonly UpdateUserValidator updateValidator = new();
+
+    private IEnumerable<string> ValidateUsername(string value) =>
+        createValidator.Field(v => new CreateUserDto { username = v }, nameof(CreateUserDto.username))(value);
+
+    private IEnumerable<string> ValidateFullName(string value) =>
+        createValidator.Field(v => new CreateUserDto { fullName = v }, nameof(CreateUserDto.fullName))(value);
+
+    [Parameter]
+    public DtoUserSummary? User { get; set; }
+
+    /// <summary>Whether the person using this drawer is BaseRole - gates the Client field, and
+    /// whether ClientsRepo.ListAsync (BaseRole-exclusive) is even safe to call.</summary>
+    [Parameter]
+    public bool IsBaseRoleViewer { get; set; }
+
+    [Parameter]
+    public bool Open { get; set; }
+
+    [Parameter]
+    public EventCallback<bool> OpenChanged { get; set; }
+
+    [Parameter]
+    public EventCallback OnSaved { get; set; }
+
+    private string username = string.Empty;
+    private string password = string.Empty;
+    private string fullName = string.Empty;
+    private string role = "Support";
+    private bool isActive = true;
+
+    private List<DtoClient> clients = [];
+    private Guid? clientId;
+
+    private string technicianEmail = string.Empty;
+    private string technicianTeam = Teams[0];
+    private string technicianSkills = string.Empty;
+    private int technicianMaxConcurrent = 5;
+    private bool technicianIsAvailable = true;
+    private bool loadingTechnician;
+    private Dictionary<string, string> categoryLevels = Categories.ToDictionary(c => c, _ => "None");
+
+    private bool busy;
+    private string? error;
+    private bool wasOpen;
+
+    // Reset only on the closed -> open transition, not on every parent re-render while the
+    // drawer stays open - otherwise an unrelated re-render mid-edit would wipe what's typed
+    // (the same trap TicketActionsDrawer's own OnParametersSet is careful to avoid).
+    protected override async Task OnParametersSetAsync()
+    {
+        if (Open && !wasOpen)
+        {
+            error = null;
+            password = string.Empty;
+            username = User?.username ?? string.Empty;
+            fullName = User?.fullName ?? string.Empty;
+            role = User?.role ?? "Support";
+            isActive = User?.isActive ?? true;
+            clientId = User?.clientId;
+
+            if (IsBaseRoleViewer && clients.Count == 0)
+            {
+                clients = (await ClientsRepo.ListAsync(pageSize: 200)).items;
+            }
+
+            technicianEmail = string.Empty;
+            technicianTeam = Teams[0];
+            technicianSkills = string.Empty;
+            technicianMaxConcurrent = 5;
+            technicianIsAvailable = true;
+            categoryLevels = Categories.ToDictionary(c => c, _ => "None");
+
+            if (User?.technicianId is { } technicianId)
+            {
+                loadingTechnician = true;
+                var technician = await Assignments.GetTechnicianAsync(technicianId);
+                if (technician is not null)
+                {
+                    technicianEmail = technician.email;
+                    technicianTeam = technician.team;
+                    technicianSkills = string.Join(", ", technician.skills);
+                    technicianMaxConcurrent = technician.maxConcurrent;
+                    technicianIsAvailable = technician.isAvailable;
+                    foreach (var level in technician.categoryLevels)
+                    {
+                        if (categoryLevels.ContainsKey(level.category)) categoryLevels[level.category] = level.level;
+                    }
+                }
+                loadingTechnician = false;
+            }
+        }
+
+        wasOpen = Open;
+    }
+
+    // BaseRole belongs to no Client - switching the role to BaseRole clears any Client picked
+    // for a previous role, rather than silently saving a role/Client combination that can't exist.
+    private void OnRoleChanged(string value)
+    {
+        role = value;
+        if (role == "BaseRole") clientId = null;
+    }
+
+    private TechnicianDetailsDto BuildTechnicianDetails() => new()
+    {
+        email = technicianEmail.Trim(),
+        team = technicianTeam,
+        skills = technicianSkills.Split(',', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries).ToList(),
+        maxConcurrent = technicianMaxConcurrent > 0 ? technicianMaxConcurrent : 5,
+        isAvailable = technicianIsAvailable,
+        categoryLevels = categoryLevels
+            .Where(kv => kv.Value != "None")
+            .Select(kv => new DtoTechnicianCategoryLevel { category = kv.Key, level = kv.Value })
+            .ToList()
+    };
+
+    private async Task SaveAsync()
+    {
+        error = null;
+
+        CreateUserDto? createDto = null;
+        UpdateUserDto? updateDto = null;
+
+        if (User is null)
+        {
+            createDto = new CreateUserDto
+            {
+                username = username.Trim(),
+                password = password,
+                fullName = fullName.Trim(),
+                role = role,
+                technician = role == "Technician" ? BuildTechnicianDetails() : null,
+                clientId = clientId
+            };
+            error = createValidator.ValidateAndGetError(createDto);
+        }
+        else
+        {
+            updateDto = new UpdateUserDto
+            {
+                fullName = fullName.Trim(),
+                role = role,
+                isActive = isActive,
+                technicianId = User.technicianId,
+                technician = role == "Technician" ? BuildTechnicianDetails() : null,
+                newPassword = string.IsNullOrWhiteSpace(password) ? null : password,
+                clientId = clientId
+            };
+            error = updateValidator.ValidateAndGetError(updateDto);
+        }
+
+        if (error is not null) return;
+
+        busy = true;
+        try
+        {
+            if (createDto is not null)
+            {
+                await Users.CreateAsync(createDto);
+            }
+            else
+            {
+                await Users.UpdateAsync(User!.id, updateDto!);
+            }
+
+            await OnSaved.InvokeAsync();
+            await OpenChanged.InvokeAsync(false);
+        }
+        catch (Exception ex) when (ex is not Microsoft.AspNetCore.Components.NavigationException)
+        {
+            error = ex.Message;
+        }
+        finally
+        {
+            busy = false;
+        }
+    }
+}

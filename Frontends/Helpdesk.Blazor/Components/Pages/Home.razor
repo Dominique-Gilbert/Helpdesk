@@ -1,0 +1,31 @@
+@page "/"
+
+<AdminOnly>
+    <MudText Typo="Typo.h4" GutterBottom="true">IT Helpdesk &amp; Assets</MudText>
+    <MudText Typo="Typo.body1" Color="Color.Secondary" Class="mb-4">
+        Four independently deployable services, one REST gateway, one event pipeline.
+    </MudText>
+
+    <MudPaper Class="pa-4 mb-4">
+        <MudText Typo="Typo.h6" GutterBottom="true">What to look at</MudText>
+        <MudText Typo="Typo.body2" Class="mb-2">
+            Open <strong>Tickets</strong>, create one, then watch the overview panel fill in. The
+            assignment and the SLA clock arrive from two different services that never speak to
+            each other &mdash; both are reacting to the same <code>Ticket.Created</code> event,
+            independently.
+        </MudText>
+        <MudText Typo="Typo.body2" Color="Color.Secondary">
+            Everything on this page came over HTTP/JSON from the gateway. This application has no
+            gRPC client, no <code>.proto</code> file, and no idea that four backends exist.
+        </MudText>
+    </MudPaper>
+
+    <MudPaper Class="pa-4">
+        <MudText Typo="Typo.h6" GutterBottom="true">Proving it the hard way</MudText>
+        <MudText Typo="Typo.body2">
+            Stop <code>assignment-api</code> and create another ticket. The SLA clock still starts.
+            Bring it back up and it will pick up the queued event on its own. That is the difference
+            between a fan-out and a chain.
+        </MudText>
+    </MudPaper>
+</AdminOnly>

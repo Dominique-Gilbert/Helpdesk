@@ -1,0 +1,158 @@
+@using Helpdesk.Blazor.Repositories
+@using Helpdesk.Gateway.Dto
+@inject ClientRepo Clients
+
+@* Same shell as AssetDrawer/UserEditDrawer - create when Client is null, edit otherwise. *@
+<DetailDrawer Title="@(Client is null ? "New client" : $"Edit {Client.company}")" Open="Open" OpenChanged="OpenChanged">
+    <ChildContent>
+        <MudStack Spacing="3">
+            @if (error is not null)
+            {
+                <MudAlert Severity="Severity.Error" Dense="true">@error</MudAlert>
+            }
+
+            <MudTextField @bind-Value="company" Label="Company" FullWidth="true" MaxLength="128" Immediate="true" Validation="@((Func<string, IEnumerable<string>>)ValidateCompany)" />
+            <MudTextField @bind-Value="name" Label="Name" FullWidth="true" MaxLength="128" Immediate="true" Validation="@((Func<string, IEnumerable<string>>)ValidateName)" />
+            <MudTextField @bind-Value="email" Label="Email" FullWidth="true" MaxLength="256" />
+            <MudTextField @bind-Value="contactNumber" Label="Contact number" FullWidth="true" MaxLength="32" />
+            <MudTextField @bind-Value="description" Label="Description" Lines="2" FullWidth="true" MaxLength="512" />
+            <MudTextField @bind-Value="aboutInfo" Label="About info" Lines="4" FullWidth="true" MaxLength="4000" />
+
+            <MudDivider Class="my-1" />
+            <MudText Typo="Typo.subtitle2">White-labeling</MudText>
+            <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="2">
+                <MudColorPicker @bind-Text="primaryColor" Label="Primary color" Placeholder="#1565C0" Style="flex:1;" />
+                @if (!string.IsNullOrWhiteSpace(primaryColor))
+                {
+                    <MudAvatar Style="@($"background:{primaryColor};")" Size="Size.Small" />
+                }
+            </MudStack>
+            <MudTextField @bind-Value="logoUrl" Label="Logo URL" Placeholder="https://.../logo.png" FullWidth="true" MaxLength="2048" />
+        </MudStack>
+    </ChildContent>
+    <FooterContent>
+        <MudButton Variant="Variant.Filled" Color="Color.Primary" FullWidth="true" Disabled="@busy" OnClick="SaveAsync">
+            @(busy ? "Saving..." : "Save")
+        </MudButton>
+    </FooterContent>
+</DetailDrawer>
+
+@code {
+    private static readonly CreateClientValidator createValidator = new();
+    private static readonly UpdateClientValidator updateValidator = new();
+
+    private IEnumerable<string> ValidateCompany(string value) =>
+        createValidator.Field(v => new CreateClientDto { company = v }, nameof(CreateClientDto.company))(value);
+
+    private IEnumerable<string> ValidateName(string value) =>
+        createValidator.Field(v => new CreateClientDto { name = v }, nameof(CreateClientDto.name))(value);
+
+    [Parameter]
+    public DtoClient? Client { get; set; }
+
+    [Parameter]
+    public bool Open { get; set; }
+
+    [Parameter]
+    public EventCallback<bool> OpenChanged { get; set; }
+
+    [Parameter]
+    public EventCallback OnSaved { get; set; }
+
+    private string company = string.Empty;
+    private string name = string.Empty;
+    private string email = string.Empty;
+    private string contactNumber = string.Empty;
+    private string description = string.Empty;
+    private string aboutInfo = string.Empty;
+    private string? primaryColor;
+    private string? logoUrl;
+
+    private bool busy;
+    private string? error;
+    private bool wasOpen;
+
+    // Reset only on the closed -> open transition - see UserEditDrawer for why.
+    protected override void OnParametersSet()
+    {
+        if (Open && !wasOpen)
+        {
+            error = null;
+            company = Client?.company ?? string.Empty;
+            name = Client?.name ?? string.Empty;
+            email = Client?.email ?? string.Empty;
+            contactNumber = Client?.contactNumber ?? string.Empty;
+            description = Client?.description ?? string.Empty;
+            aboutInfo = Client?.aboutInfo ?? string.Empty;
+            primaryColor = Client?.primaryColor;
+            logoUrl = Client?.logoUrl;
+        }
+
+        wasOpen = Open;
+    }
+
+    private async Task SaveAsync()
+    {
+        error = null;
+
+        CreateClientDto? createDto = null;
+        UpdateClientDto? updateDto = null;
+
+        if (Client is null)
+        {
+            createDto = new CreateClientDto
+            {
+                company = company.Trim(),
+                name = name.Trim(),
+                email = email.Trim(),
+                contactNumber = contactNumber.Trim(),
+                description = description.Trim(),
+                aboutInfo = aboutInfo.Trim(),
+                primaryColor = string.IsNullOrWhiteSpace(primaryColor) ? null : primaryColor.Trim(),
+                logoUrl = string.IsNullOrWhiteSpace(logoUrl) ? null : logoUrl.Trim()
+            };
+            error = createValidator.ValidateAndGetError(createDto);
+        }
+        else
+        {
+            updateDto = new UpdateClientDto
+            {
+                company = company.Trim(),
+                name = name.Trim(),
+                email = email.Trim(),
+                contactNumber = contactNumber.Trim(),
+                description = description.Trim(),
+                aboutInfo = aboutInfo.Trim(),
+                primaryColor = string.IsNullOrWhiteSpace(primaryColor) ? null : primaryColor.Trim(),
+                logoUrl = string.IsNullOrWhiteSpace(logoUrl) ? null : logoUrl.Trim()
+            };
+            error = updateValidator.ValidateAndGetError(updateDto);
+        }
+
+        if (error is not null) return;
+
+        busy = true;
+        try
+        {
+            if (createDto is not null)
+            {
+                await Clients.CreateAsync(createDto);
+            }
+            else
+            {
+                await Clients.UpdateAsync(Client!.id, updateDto!);
+            }
+
+            await OnSaved.InvokeAsync();
+            await OpenChanged.InvokeAsync(false);
+        }
+        catch (Exception ex) when (ex is not Microsoft.AspNetCore.Components.NavigationException)
+        {
+            error = ex.Message;
+        }
+        finally
+        {
+            busy = false;
+        }
+    }
+}

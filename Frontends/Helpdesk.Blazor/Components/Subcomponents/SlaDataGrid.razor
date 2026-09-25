@@ -1,0 +1,53 @@
+@using Helpdesk.Gateway.Dto
+
+<MudDataGrid Items="@Items" Hover="true" Dense="true" FixedHeader="true" RowsPerPage="15" Class="@($"helpdesk-table {Class}")">
+    <Columns>
+        <TemplateColumn Title="Ticket">
+            <CellTemplate><code>@context.Item.ticketReference</code></CellTemplate>
+        </TemplateColumn>
+        <PropertyColumn Property="x => x.priority" Title="Priority" />
+        <TemplateColumn Title="Status">
+            <CellTemplate>
+                @if (context.Item.status == "Breached")
+                {
+                    <MudChip T="string" Size="Size.Small" Color="Color.Error">@context.Item.status</MudChip>
+                }
+                else
+                {
+                    <MudChip T="string" Size="Size.Small" Color="Color.Success">@context.Item.status</MudChip>
+                }
+            </CellTemplate>
+        </TemplateColumn>
+        <TemplateColumn Title="Due (UTC)">
+            <CellTemplate>@context.Item.dueAtUtc.ToString("u")</CellTemplate>
+        </TemplateColumn>
+        <TemplateColumn Title="Remaining" Sortable="false">
+            <CellTemplate>@FormatRemaining(context.Item.remainingSeconds)</CellTemplate>
+        </TemplateColumn>
+        <TemplateColumn Title="Escalation">
+            <CellTemplate>@(context.Item.escalationLevel == 0 ? "-" : $"level {context.Item.escalationLevel}")</CellTemplate>
+        </TemplateColumn>
+    </Columns>
+    <PagerContent>
+        <MudDataGridPager T="DtoSlaClock" />
+    </PagerContent>
+</MudDataGrid>
+
+@code {
+    [Parameter, EditorRequired]
+    public IEnumerable<DtoSlaClock> Items { get; set; } = [];
+
+    [Parameter]
+    public string? Class { get; set; }
+
+    private static string FormatRemaining(long seconds) =>
+        seconds >= 0
+            ? FormatSpan(TimeSpan.FromSeconds(seconds))
+            : $"-{FormatSpan(TimeSpan.FromSeconds(-seconds))}";
+
+    // TimeSpan's "hh" custom format specifier is hours-within-the-current-day (00-23), not
+    // total hours - past 24h it silently drops the day count instead of showing it, so this
+    // uses TotalHours (uncapped) rather than the "d\.hh\:mm\:ss" format.
+    private static string FormatSpan(TimeSpan span) =>
+        $"{(int)span.TotalHours:00}:{span.Minutes:00}:{span.Seconds:00}";
+}

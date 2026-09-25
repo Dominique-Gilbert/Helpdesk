@@ -1,0 +1,163 @@
+@using Helpdesk.Blazor.Repositories
+@using Helpdesk.Gateway.Dto
+@inject AssetRepo AssetsRepo
+
+@* Same shell/shape as RoutingRuleDrawer - create when Asset is null, edit otherwise. *@
+<DetailDrawer Title="@(Asset is null ? "New asset" : $"Edit {Asset.tag}")" Open="Open" OpenChanged="OpenChanged">
+    <ChildContent>
+        <MudStack Spacing="3">
+            @if (error is not null)
+            {
+                <MudAlert Severity="Severity.Error" Dense="true">@error</MudAlert>
+            }
+
+            @if (Asset is null)
+            {
+                <MudTextField @bind-Value="tag" Label="Tag" Placeholder="LAPTOP-042" FullWidth="true"
+                              MaxLength="32" Counter="32" Immediate="true" Validation="@((Func<string, IEnumerable<string>>)ValidateTag)" />
+            }
+
+            <MudTextField @bind-Value="name" Label="Name" Placeholder="Dell Latitude 5440" FullWidth="true" MaxLength="128" />
+            <MudTextField @bind-Value="serialNumber" Label="Serial number" FullWidth="true" MaxLength="64" />
+            <MudTextField @bind-Value="location" Label="Location" FullWidth="true" MaxLength="128" />
+
+            <MudSelect @bind-Value="type" Label="Type" FullWidth="true">
+                @foreach (var value in types)
+                {
+                    <MudSelectItem Value="@value">@value</MudSelectItem>
+                }
+            </MudSelect>
+
+            @if (Asset is not null)
+            {
+                <MudSelect @bind-Value="status" Label="Status" FullWidth="true"
+                           Disabled="@(Asset.status == "Assigned")"
+                           HelperText="@(Asset.status == "Assigned" ? "Use Return on the grid to change status while assigned." : null)">
+                    @foreach (var value in EditableStatuses(Asset.status))
+                    {
+                        <MudSelectItem Value="@value">@value</MudSelectItem>
+                    }
+                </MudSelect>
+            }
+        </MudStack>
+    </ChildContent>
+    <FooterContent>
+        <MudButton Variant="Variant.Filled" Color="Color.Primary" FullWidth="true" Disabled="@busy" OnClick="SaveAsync">
+            @(busy ? "Saving..." : "Save")
+        </MudButton>
+    </FooterContent>
+</DetailDrawer>
+
+@code {
+    private static readonly string[] types = ["Laptop", "Desktop", "Monitor", "Phone", "Printer", "NetworkDevice", "Peripheral"];
+    private static readonly CreateAssetValidator createValidator = new();
+    private static readonly UpdateAssetValidator updateValidator = new();
+
+    private IEnumerable<string> ValidateTag(string value) =>
+        createValidator.Field(v => new CreateAssetDto { tag = v }, nameof(CreateAssetDto.tag))(value);
+
+    [Parameter]
+    public DtoAsset? Asset { get; set; }
+
+    [Parameter]
+    public bool Open { get; set; }
+
+    [Parameter]
+    public EventCallback<bool> OpenChanged { get; set; }
+
+    [Parameter]
+    public EventCallback OnSaved { get; set; }
+
+    private string tag = string.Empty;
+    private string name = string.Empty;
+    private string serialNumber = string.Empty;
+    private string location = string.Empty;
+    private string type = types[0];
+    private string status = "InStock";
+
+    private bool busy;
+    private string? error;
+    private bool wasOpen;
+
+    // Assigned is reachable only through the grid's Assign action, and stepping back to InStock
+    // while an assignment is open belongs to Return - so neither is offered from here. See
+    // Asset.API's AssetService.UpdateAsset for the server-side half of this same rule.
+    private static IEnumerable<string> EditableStatuses(string current) =>
+        current == "Assigned" ? [current] : new[] { "InStock", "InRepair", "Retired" };
+
+    // Reset only on the closed -> open transition - see UserEditDrawer for why.
+    protected override void OnParametersSet()
+    {
+        if (Open && !wasOpen)
+        {
+            error = null;
+            tag = string.Empty;
+            name = Asset?.name ?? string.Empty;
+            serialNumber = Asset?.serialNumber ?? string.Empty;
+            location = Asset?.location ?? string.Empty;
+            type = string.IsNullOrWhiteSpace(Asset?.type) ? types[0] : Asset.type;
+            status = Asset?.status ?? "InStock";
+        }
+
+        wasOpen = Open;
+    }
+
+    private async Task SaveAsync()
+    {
+        error = null;
+
+        CreateAssetDto? createDto = null;
+        UpdateAssetDto? updateDto = null;
+
+        if (Asset is null)
+        {
+            createDto = new CreateAssetDto
+            {
+                tag = tag.Trim(),
+                name = name.Trim(),
+                serialNumber = serialNumber.Trim(),
+                type = type,
+                location = location.Trim()
+            };
+            error = createValidator.ValidateAndGetError(createDto);
+        }
+        else
+        {
+            updateDto = new UpdateAssetDto
+            {
+                name = name.Trim(),
+                serialNumber = serialNumber.Trim(),
+                location = location.Trim(),
+                type = type,
+                status = status
+            };
+            error = updateValidator.ValidateAndGetError(updateDto);
+        }
+
+        if (error is not null) return;
+
+        busy = true;
+        try
+        {
+            if (createDto is not null)
+            {
+                await AssetsRepo.CreateAsync(createDto);
+            }
+            else
+            {
+                await AssetsRepo.UpdateAsync(Asset!.id, updateDto!);
+            }
+
+            await OnSaved.InvokeAsync();
+            await OpenChanged.InvokeAsync(false);
+        }
+        catch (Exception ex) when (ex is not Microsoft.AspNetCore.Components.NavigationException)
+        {
+            error = ex.Message;
+        }
+        finally
+        {
+            busy = false;
+        }
+    }
+}

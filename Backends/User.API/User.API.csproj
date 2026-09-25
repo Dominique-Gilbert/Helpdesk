@@ -1,0 +1,24 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+  <PropertyGroup>
+    <RootNamespace>Helpdesk.Users.Api</RootNamespace>
+    <AssemblyName>User.API</AssemblyName>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Grpc.AspNetCore" />
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Design">
+      <PrivateAssets>all</PrivateAssets>
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+    </PackageReference>
+    <PackageReference Include="Microsoft.Extensions.Diagnostics.HealthChecks.EntityFrameworkCore" />
+    <PackageReference Include="System.IdentityModel.Tokens.Jwt" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\User.Infrastructure\User.Infrastructure.csproj" />
+    <ProjectReference Include="..\..\Shared\Helpdesk.Mapping\Helpdesk.Mapping.csproj" />
+    <ProjectReference Include="..\..\Shared\Helpdesk.Persistence\Helpdesk.Persistence.csproj" />
+    <ProjectReference Include="..\..\Shared\Helpdesk.ServiceDefaults\Helpdesk.ServiceDefaults.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <Protobuf Include="Protos\user.proto" GrpcServices="Server" />
+  </ItemGroup>
+</Project>

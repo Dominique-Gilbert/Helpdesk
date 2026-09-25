@@ -1,0 +1,29 @@
+## .NET
+bin/
+obj/
+[Dd]ebug/
+[Rr]elease/
+artifacts/
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+
+## IDE
+.vs/
+.vscode/
+.idea/
+
+## Local configuration - never commit connection strings or credentials (SOP 5)
+appsettings.Development.json
+appsettings.Local.json
+*.local.env
+.env
+
+## Docker volumes / local state
+.docker-data/
+
+## Test output
+TestResults/
+*.trx
+coverage*.xml

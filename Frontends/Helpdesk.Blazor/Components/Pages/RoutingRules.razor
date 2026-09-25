@@ -1,0 +1,87 @@
+@page "/technicians/routing-rules"
+@implements IDisposable
+@using Helpdesk.Blazor.Components.Subcomponents
+@using Helpdesk.Blazor.Services
+@inject AssignmentRepo Assignments
+@inject ClientRepo ClientsRepo
+@inject BaseRoleViewContext ViewContext
+
+<AdminOnly>
+    <HelpdeskBreadcrumbs BreadcrumbItems="breadcrumbs" />
+
+    <MudStack Row="true" AlignItems="AlignItems.Center" Justify="Justify.SpaceBetween" Class="mb-4">
+        <div>
+            <MudText Typo="Typo.h4" GutterBottom="true">Routing rules</MudText>
+            <MudText Typo="Typo.body1" Color="Color.Secondary">
+                The rules that decide who gets a new ticket.
+                @if (isBaseRole && ViewContext.SelectedClientName is { } name)
+                {
+                    <text> Showing @name only - switch back to "All clients" in the profile menu to see every company.</text>
+                }
+            </MudText>
+        </div>
+        <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="() => OpenDrawerAsync(null)">
+            New rule
+        </MudButton>
+    </MudStack>
+
+    @if (rules is null)
+    {
+        <MudText Color="Color.Secondary">Loading&hellip;</MudText>
+    }
+    else
+    {
+        <RoutingRulesDataGrid Items="rules" OnEdit="rule => OpenDrawerAsync(rule)" ClientNames="@(isBaseRole ? clientNames : null)" />
+    }
+</AdminOnly>
+
+<RoutingRuleDrawer Rule="drawerRule" IsBaseRoleViewer="isBaseRole" @bind-Open="drawerOpen" OnSaved="ReloadAsync" />
+
+@code {
+    private readonly List<BreadcrumbItem> breadcrumbs = ManagementBreadcrumbs.For("/technicians/routing-rules");
+    private List<DtoRoutingRule>? rules;
+
+    private DtoRoutingRule? drawerRule;
+    private bool drawerOpen;
+
+    private bool isBaseRole;
+    private Dictionary<Guid, string> clientNames = [];
+
+    [CascadingParameter]
+    private Task<AuthenticationState>? AuthenticationStateTask { get; set; }
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (AuthenticationStateTask is not null)
+        {
+            var state = await AuthenticationStateTask;
+            isBaseRole = state.User.IsInRole("BaseRole");
+        }
+
+        if (isBaseRole)
+        {
+            var clients = (await ClientsRepo.ListAsync(pageSize: 200)).items;
+            clientNames = clients.ToDictionary(c => c.id, c => c.company);
+            ViewContext.OnChange += HandleViewChanged;
+        }
+
+        await ReloadAsync();
+    }
+
+    private async Task ReloadAsync() => rules = await Assignments.ListRoutingRulesAsync(ViewContext.SelectedClientId);
+
+    private void HandleViewChanged() => InvokeAsync(async () =>
+    {
+        await ReloadAsync();
+        StateHasChanged();
+    });
+
+    public void Dispose() => ViewContext.OnChange -= HandleViewChanged;
+
+    private Task OpenDrawerAsync(DtoRoutingRule? rule)
+    {
+        drawerRule = rule;
+        drawerOpen = true;
+        return Task.CompletedTask;
+    }
+}

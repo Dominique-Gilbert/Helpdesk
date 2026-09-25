@@ -1,0 +1,48 @@
+@using Helpdesk.Gateway.Dto
+
+<MudDataGrid Items="@Items" Hover="true" Dense="true" FixedHeader="true" RowsPerPage="15" Class="@($"helpdesk-table {Class}")">
+    <Columns>
+        <TemplateColumn Title="Tag">
+            <CellTemplate><code>@context.Item.tag</code></CellTemplate>
+        </TemplateColumn>
+        <PropertyColumn Property="x => x.name" Title="Name" />
+        <PropertyColumn Property="x => x.type" Title="Type" />
+        <PropertyColumn Property="x => x.location" Title="Location" />
+        <PropertyColumn Property="x => x.status" Title="Status" />
+        <TemplateColumn Title="Held by" Sortable="false">
+            <CellTemplate>@(context.Item.currentHolder?.assignedTo ?? "-")</CellTemplate>
+        </TemplateColumn>
+        <TemplateColumn Title="" Sortable="false">
+            <CellTemplate>
+                <MudStack Row="true" Spacing="1">
+                    <MudButton Variant="Variant.Outlined" Color="Color.Primary" Size="Size.Small"
+                               OnClick="() => OnEdit.InvokeAsync(context.Item)">
+                        Edit
+                    </MudButton>
+                    <MudButton Variant="Variant.Outlined" Color="@(context.Item.currentHolder is null ? Color.Primary : Color.Secondary)" Size="Size.Small"
+                               Disabled="@(context.Item.status == "Retired")"
+                               OnClick="() => OnAssign.InvokeAsync(context.Item)">
+                        @(context.Item.currentHolder is null ? "Assign" : "Return")
+                    </MudButton>
+                </MudStack>
+            </CellTemplate>
+        </TemplateColumn>
+    </Columns>
+    <PagerContent>
+        <MudDataGridPager T="DtoAsset" />
+    </PagerContent>
+</MudDataGrid>
+
+@code {
+    [Parameter, EditorRequired]
+    public IEnumerable<DtoAsset> Items { get; set; } = [];
+
+    [Parameter]
+    public string? Class { get; set; }
+
+    [Parameter]
+    public EventCallback<DtoAsset> OnEdit { get; set; }
+
+    [Parameter]
+    public EventCallback<DtoAsset> OnAssign { get; set; }
+}

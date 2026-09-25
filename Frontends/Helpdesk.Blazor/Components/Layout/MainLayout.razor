@@ -1,0 +1,155 @@
+@inherits LayoutComponentBase
+@implements IDisposable
+@using System.Security.Claims
+@using Helpdesk.Blazor.Repositories
+@using Helpdesk.Blazor.Services
+@using Helpdesk.Blazor.Theming
+@using Helpdesk.Gateway.Dto
+@using TenantTheming
+@inject NavigationManager Navigation
+@inject TenantThemeService ThemeService
+@inject BaseRoleViewContext ViewContext
+@inject ClientRepo Clients
+
+<MudThemeProvider Theme="ThemeService.Theme" />
+<MudPopoverProvider />
+<MudDialogProvider />
+<MudSnackbarProvider />
+
+<AuthorizeView Context="authContext">
+    <Authorized>
+        <MudLayout>
+            <MudAppBar Elevation="1">
+                <MudIconButton Icon="@Icons.Material.Filled.Menu" Color="Color.Inherit" Edge="Edge.Start" OnClick="ToggleDrawer" />
+                @* The drawer's own header already shows the logo/name while it's open - showing
+                   it here too would be redundant, so this only appears once the drawer is closed.
+                   White-labeling: a Client with its own logo/name (ThemeService.Branding) shows
+                   that instead of the product's own - see TenantTheming/ClientBrandingProvider. *@
+                @if (!_drawerOpen)
+                {
+                    <MudImage Src="@(ThemeService.Branding?.LogoUrl ?? "images/logo.png")" Alt="@brandName" Width="36" Height="36" Class="ml-2 mr-3" />
+                    <MudText Typo="Typo.h6">@brandName</MudText>
+                }
+                <MudSpacer />
+                @* BaseRole-exclusive: picks which Client's Tickets/Assets/Technicians/Users this
+                   session sees, everywhere at once - shared state (BaseRoleViewContext), not a
+                   per-page filter. The Clients page itself never reads this - it always shows
+                   every Client regardless of what's picked here. An Admin/Support/Technician's
+                   own view is always scoped to their own Client server-side either way, so this
+                   control simply doesn't exist for them. *@
+                @if (isBaseRole)
+                {
+                    <MudMenu AnchorOrigin="Origin.BottomRight" TransformOrigin="Origin.TopRight" Class="mr-3">
+                        <ActivatorContent>
+                            <div @onclick="context.ToggleAsync" style="cursor:pointer;">
+                                <MudChip T="string" Color="Color.Secondary" Icon="@Icons.Material.Filled.Business">
+                                    @(ViewContext.SelectedClientName ?? "All clients")
+                                </MudChip>
+                            </div>
+                        </ActivatorContent>
+                        <ChildContent>
+                            <MudMenuItem OnClick="@(() => SelectClient(null, null))">All clients</MudMenuItem>
+                            @foreach (var switcherClient in switcherClients)
+                            {
+                                <MudMenuItem OnClick="@(() => SelectClient(switcherClient.id, switcherClient.company))">@switcherClient.company</MudMenuItem>
+                            }
+                        </ChildContent>
+                    </MudMenu>
+                }
+                <MudText Typo="Typo.body2" Class="mr-3">@authContext.User.Identity?.Name</MudText>
+                <MudMenu AnchorOrigin="Origin.BottomRight" TransformOrigin="Origin.TopRight">
+                    <ActivatorContent>
+                        @* A custom ActivatorContent isn't wired to open the menu automatically -
+                           it has to call the implicit MenuContext's ToggleAsync itself. *@
+                        <div @onclick="context.ToggleAsync" style="cursor:pointer;">
+                            <MudAvatar Color="Color.Secondary">
+                                <MudIcon Icon="@Icons.Material.Filled.Person" />
+                            </MudAvatar>
+                        </div>
+                    </ActivatorContent>
+                    <ChildContent>
+                        <MudMenuItem Icon="@Icons.Material.Filled.AccountCircle" OnClick="GoToProfile">View Profile</MudMenuItem>
+                        @* Admin-of-a-Client only: BaseRole already manages every Client's full
+                           theme from the Clients page, and Technician/Support don't get a way to
+                           change their own company's look - just an Admin does. isClientAdmin
+                           combines the role check with "does ThemeService actually have a
+                           resolved Client" (non-null only when the caller has a ClientId at all). *@
+                        @if (isClientAdmin)
+                        {
+                            <MudMenuItem Icon="@Icons.Material.Filled.Palette" OnClick="GoToAppTheme">App Theme</MudMenuItem>
+                        }
+                        <MudMenuItem Icon="@Icons.Material.Filled.Logout" OnClick="Logout">Logout</MudMenuItem>
+                    </ChildContent>
+                </MudMenu>
+            </MudAppBar>
+            <MudDrawer @bind-Open="_drawerOpen" Elevation="1" Variant="DrawerVariant.Persistent">
+                <NavMenu />
+            </MudDrawer>
+            <MudMainContent Class="pa-4">
+                @Body
+            </MudMainContent>
+        </MudLayout>
+    </Authorized>
+    <NotAuthorized>
+        <RedirectToLogin />
+    </NotAuthorized>
+</AuthorizeView>
+
+@code {
+    private bool _drawerOpen = true;
+    private bool _isAdmin;
+    private bool isBaseRole;
+    private List<DtoClient> switcherClients = [];
+
+    private string brandName => ThemeService.Branding?.DisplayName ?? "IT Helpdesk & Assets";
+
+    // Admin role AND a resolved Client - ThemeService.Branding is non-null exactly when the
+    // caller has a ClientId at all (see ClientBrandingProvider), which a Technician/Support
+    // linked to the same Client would also satisfy - the role check is what keeps this Admin-only.
+    private bool isClientAdmin => _isAdmin && ThemeService.Branding is not null;
+
+    [CascadingParameter]
+    private Task<AuthenticationState>? AuthenticationStateTask { get; set; }
+
+    protected override async Task OnInitializedAsync()
+    {
+        ThemeService.OnChange += HandleThemeChanged;
+
+        // Skip the lookup entirely for an unauthenticated visitor (about to be bounced to
+        // /login by the NotAuthorized branch below anyway) - there's no caller identity yet for
+        // ClientBrandingProvider to resolve a Client from, and calling it would just draw an
+        // avoidable 401 through UnauthorizedHandler on the way out.
+        var authState = AuthenticationStateTask is null ? null : await AuthenticationStateTask;
+        if (authState?.User.Identity?.IsAuthenticated == true)
+        {
+            _isAdmin = authState.User.IsInRole("Admin");
+            isBaseRole = authState.User.IsInRole("BaseRole");
+
+            // "current-user" is just a non-null sentinel telling TenantThemeService to actually
+            // attempt the lookup - ClientBrandingProvider ignores the literal value and always
+            // resolves the CALLER's own Client server-side (see its own doc comment for why).
+            await ThemeService.ApplyAsync(HelpdeskTheme.Theme, "current-user");
+
+            if (isBaseRole)
+            {
+                switcherClients = (await Clients.ListAsync(pageSize: 200)).items;
+            }
+        }
+    }
+
+    private void SelectClient(Guid? clientId, string? clientName) => ViewContext.SetClient(clientId, clientName);
+
+    private void GoToAppTheme() => Navigation.NavigateTo("/app-theme");
+
+    private void HandleThemeChanged() => InvokeAsync(StateHasChanged);
+
+    public void Dispose() => ThemeService.OnChange -= HandleThemeChanged;
+
+    private void ToggleDrawer() => _drawerOpen = !_drawerOpen;
+
+    private void GoToProfile() => Navigation.NavigateTo("/profile");
+
+    // A plain navigation, not a form post - SignOutAsync now runs behind a GET /logout endpoint
+    // (see Program.cs) specifically so this menu item can trigger it with a normal click.
+    private void Logout() => Navigation.NavigateTo("/logout", forceLoad: true);
+}

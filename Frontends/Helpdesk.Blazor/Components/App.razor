@@ -1,0 +1,40 @@
+@using Microsoft.AspNetCore.Components
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <base href="/" />
+    <link rel="icon" type="image/png" href="images/logo.png" />
+    <link href="_content/MudBlazor/MudBlazor.min.css" rel="stylesheet" />
+    <link rel="stylesheet" href="app.css" />
+    @* Blazor CSS isolation's generated bundle (one *.razor.css per component, scoped
+       automatically) - this app never used it before TicketsPagePreview.razor.css, so this link
+       was never added; without it, every *.razor.css file in the project is silently ignored. *@
+    <link rel="stylesheet" href="Helpdesk.Blazor.styles.css" />
+    <title>IT Helpdesk &amp; Assets</title>
+    <HeadOutlet @rendermode="RenderModeForPage" />
+</head>
+<body>
+    <Routes @rendermode="RenderModeForPage" />
+    <script src="_framework/blazor.web.js"></script>
+    <script src="_content/MudBlazor/MudBlazor.min.js"></script>
+</body>
+</html>
+
+@code {
+    [CascadingParameter]
+    private HttpContext HttpContext { get; set; } = default!;
+
+    // Global interactivity everywhere except /login: MainLayout's own controls (drawer toggle,
+    // profile menu) and MudBlazor's popover-based components (MudSelect, MudMenu) only work
+    // when the layout is part of the SAME interactive tree as the page - which per-page render
+    // modes can't give a layout (it always stays static SSR; see Microsoft's Blazor layouts
+    // docs, "Statically-rendered layout components"). Login.razor is the one exception: it
+    // must stay static SSR because HttpContext.SignInAsync only works during a real HTTP
+    // request/response, not from inside an already-established interactive circuit.
+    private IComponentRenderMode? RenderModeForPage =>
+        HttpContext.Request.Path.StartsWithSegments("/login")
+            ? null
+            : InteractiveServer;
+}

@@ -1,0 +1,18 @@
+/* Blazor CSS isolation - scoped to this component only, so these rules can never leak onto the
+   real app's own .helpdesk-table/.nav-menu-title elements. The draft color itself still comes in
+   as a plain inherited CSS custom property (--preview-primary, set inline on the root wrapper in
+   the .razor markup) - isolation scopes selectors, not variable inheritance, so color-mix() below
+   still picks up whatever's currently typed/picked, live. */
+
+.preview-row:hover {
+    background: color-mix(in srgb, var(--preview-primary) 10%, white);
+}
+
+.preview-nav-item {
+    cursor: default;
+    user-select: none;
+}
+
+.preview-nav-item:hover {
+    background: rgba(255, 255, 255, 0.08);
+}

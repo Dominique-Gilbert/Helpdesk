@@ -1,0 +1,104 @@
+syntax = "proto3";
+
+option csharp_namespace = "Helpdesk.Clients.Grpc";
+package helpdesk.clients;
+
+import "google/protobuf/timestamp.proto";
+
+// Company/customer directory. Managing Clients (Create/List/Update) is exclusive to BaseRole -
+// see ClientService's per-method [Authorize] and the Gateway's ClientController for the
+// enforcement, NavMenu/BaseRoleOnly for the frontend side of that exclusivity. GetClient is the
+// one exception: any authenticated caller may read a single Client by id - the Gateway's
+// self-service branding lookup (UserService.GetMyBrandingAsync, called for the caller's own
+// ClientId only) depends on that, and the fields it exposes (company/name/contact details/
+// branding) aren't sensitive enough to warrant BaseRole-only reads the way writes are.
+service ClientGrpc {
+  rpc CreateClient (CreateClientRequest) returns (ClientResponse);
+  rpc GetClient (ClientRequest) returns (ClientResponse);
+  rpc ListClients (ListClientsRequest) returns (ClientListResponse);
+  // Editable-field update. Empty string = no change.
+  rpc UpdateClient (UpdateClientRequest) returns (ClientResponse);
+  // Fully anonymous - see ClientService's own [AllowAnonymous] doc comment. The second half of
+  // the progressive/identifier-first login screen: the Gateway resolves a ClientId from a
+  // username hint (User.API's GetLoginBrandingHint) with no token yet at all, then calls this to
+  // turn that id into a logo/color - deliberately the slim ClientBrandingResponse shape, never
+  // the full ClientResponse (no email/contact details/description to a caller with no identity).
+  rpc GetClientBranding (ClientRequest) returns (ClientBrandingResponse);
+  // Self-service, Admin-only - the "App Theme" button, scoped to exactly the caller's own
+  // Client. Independently re-checked here, not just trusted from the Gateway: the caller's own
+  // ClientId claim (from their validated JWT) must match request.id, or this rejects with
+  // PermissionDenied - same "no blind trust of the Gateway" discipline as every other backend in
+  // this system. BaseRole doesn't use this path - UpdateClient already covers it unrestricted.
+  rpc UpdateClientBranding (UpdateClientBrandingRequest) returns (ClientBrandingResponse);
+}
+
+message ClientRequest {
+  string id = 1;
+}
+
+message UpdateClientBrandingRequest {
+  string id = 1;
+  string primary_color = 2;
+  string logo_url = 3;
+  // Empty string = clear back to the Client's own Company name.
+  string display_name = 4;
+}
+
+// The one thing an anonymous visitor (no JWT yet) may ever learn about a Client - deliberately
+// separate from ClientResponse rather than reusing it with fields blanked out, so it's obvious at
+// the type level that this response can never grow a sensitive field by accident.
+message ClientBrandingResponse {
+  string client_id = 1;
+  string display_name = 2;
+  string primary_color = 3;
+  string logo_url = 4;
+}
+
+message CreateClientRequest {
+  string company = 1;
+  string name = 2;
+  string email = 3;
+  string contact_number = 4;
+  string description = 5;
+  string about_info = 6;
+  string primary_color = 7; // white-labeling; optional, hex e.g. "#1565C0"
+  string logo_url = 8;      // white-labeling; optional
+}
+
+message UpdateClientRequest {
+  string id = 1;
+  string company = 2;
+  string name = 3;
+  string email = 4;
+  string contact_number = 5;
+  string description = 6;
+  string about_info = 7;
+  string primary_color = 8;
+  string logo_url = 9;
+}
+
+message ListClientsRequest {
+  int32 page = 1;
+  int32 page_size = 2;
+}
+
+message ClientResponse {
+  string id = 1;
+  string company = 2;
+  string name = 3;
+  string email = 4;
+  string contact_number = 5;
+  string description = 6;
+  string about_info = 7;
+  google.protobuf.Timestamp created_at_utc = 8;
+  google.protobuf.Timestamp updated_at_utc = 9;
+  string primary_color = 10;
+  string logo_url = 11;
+}
+
+message ClientListResponse {
+  repeated ClientResponse clients = 1;
+  int32 total = 2;
+  int32 page = 3;
+  int32 page_size = 4;
+}

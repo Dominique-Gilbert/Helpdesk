@@ -1,0 +1,92 @@
+syntax = "proto3";
+
+option csharp_namespace = "Helpdesk.Sla.Grpc";
+package helpdesk.sla;
+
+import "google/protobuf/timestamp.proto";
+
+// SLA clocks and escalations. Clocks are started by consuming Ticket.Created, never by
+// an rpc - the read surface is the only thing exposed over gRPC.
+service SlaGrpc {
+  rpc GetSlaClock (SlaClockRequest) returns (SlaClockResponse);
+  rpc GetSlaClockForTicket (TicketSlaRequest) returns (SlaClockResponse);
+  rpc ListSlaClocks (ListSlaClocksRequest) returns (SlaClockListResponse);
+  rpc ListEscalations (ListEscalationsRequest) returns (EscalationListResponse);
+  rpc StopSlaClock (TicketSlaRequest) returns (SlaClockResponse);
+  // Admin-only - shifts the due time by a delta and records why. See SlaAdjustment.
+  rpc AdjustSlaClock (AdjustSlaClockRequest) returns (SlaClockResponse);
+}
+
+message SlaClockRequest {
+  string id = 1;
+}
+
+message TicketSlaRequest {
+  string ticket_id = 1;
+}
+
+message ListSlaClocksRequest {
+  string status = 1;          // Running | Stopped | Breached; empty = any
+  int32 page = 2;
+  int32 page_size = 3;
+}
+
+message ListEscalationsRequest {
+  string sla_clock_id = 1;    // empty = all
+}
+
+message AdjustSlaClockRequest {
+  string ticket_id = 1;
+  int32 delta_minutes = 2;    // positive extends, negative shrinks
+  string reason = 3;
+  string adjusted_by = 4;     // the calling admin's username
+}
+
+message SlaAdjustmentMessage {
+  string id = 1;
+  string sla_clock_id = 2;
+  int32 delta_minutes = 3;
+  string reason = 4;
+  string adjusted_by = 5;
+  google.protobuf.Timestamp adjusted_at_utc = 6;
+}
+
+message EscalationMessage {
+  string id = 1;
+  string sla_clock_id = 2;
+  int32 level = 3;
+  string notes = 4;
+  google.protobuf.Timestamp raised_at_utc = 5;
+}
+
+message SlaClockResponse {
+  string id = 1;
+  string ticket_id = 2;
+  string ticket_reference = 3;
+  string priority = 4;
+  string status = 5;
+  google.protobuf.Timestamp started_at_utc = 6;
+  google.protobuf.Timestamp due_at_utc = 7;
+  google.protobuf.Timestamp stopped_at_utc = 8;
+  google.protobuf.Timestamp breached_at_utc = 9;
+  // Convenience for the gateway so the UI does not recompute policy client-side.
+  int64 remaining_seconds = 10;
+  int32 escalation_level = 11;
+  repeated EscalationMessage escalations = 12;
+  repeated SlaAdjustmentMessage adjustments = 13;
+  // Only meaningful on GetSlaClockForTicket's response: false means no clock exists for that
+  // ticket yet (the TicketCreated consumer hasn't run yet, or never will for this ticket) -
+  // an expected, common state, not an error. Every other rpc that returns this message always
+  // has a real clock to return, so this is implicitly true there and never checked.
+  bool found = 14;
+}
+
+message SlaClockListResponse {
+  repeated SlaClockResponse clocks = 1;
+  int32 total = 2;
+}
+
+message EscalationListResponse {
+  repeated EscalationMessage escalations = 1;
+  int32 total = 2;
+}

@@ -1,0 +1,28 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <Sdk Name="Aspire.AppHost.Sdk" Version="9.0.0" />
+
+  <PropertyGroup>
+		<OutputType>Exe</OutputType>
+		<TargetFramework>net9.0</TargetFramework>
+		<ImplicitUsings>enable</ImplicitUsings>
+		<Nullable>enable</Nullable>
+		<IsAspireHost>true</IsAspireHost>
+  </PropertyGroup>
+
+  <ItemGroup>
+	<PackageReference Include="Aspire.Hosting.AppHost" />
+	<PackageReference Include="Microsoft.Extensions.Configuration.Binder" />
+  </ItemGroup>
+
+  <ItemGroup>
+	<ProjectReference Include="..\Backends\Asset.API\Asset.API.csproj" />
+	<ProjectReference Include="..\Backends\Assignment.API\Assignment.API.csproj" />
+	<ProjectReference Include="..\Backends\Client.API\Client.API.csproj" />
+	<ProjectReference Include="..\Backends\SLA.API\SLA.API.csproj" />
+	<ProjectReference Include="..\Backends\Ticket.API\Ticket.API.csproj" />
+	<ProjectReference Include="..\Backends\User.API\User.API.csproj" />
+	<ProjectReference Include="..\Frontends\Helpdesk.Blazor\Helpdesk.Blazor.csproj" />
+	<ProjectReference Include="..\Gateway\Helpdesk.Gateway.API\Helpdesk.Gateway.API.csproj" />
+  </ItemGroup>
+</Project>

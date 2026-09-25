@@ -1,0 +1,9 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <RootNamespace>Helpdesk.Users.Domain</RootNamespace>
+    <AssemblyName>User.Domain</AssemblyName>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\..\Shared\Helpdesk.Contracts\Helpdesk.Contracts.csproj" />
+  </ItemGroup>
+</Project>

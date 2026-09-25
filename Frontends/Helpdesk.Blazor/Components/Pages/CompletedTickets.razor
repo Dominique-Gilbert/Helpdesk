@@ -1,0 +1,149 @@
+@page "/tickets/completed"
+@using Helpdesk.Blazor.Components.Subcomponents
+@using Helpdesk.Blazor.Services
+@inject TicketRepo TicketsRepo
+
+@* Support never gets a Completed Tickets view, not even scoped to their own - see
+   AdminOrTechnicianOnly. *@
+<AdminOrTechnicianOnly>
+    <HelpdeskBreadcrumbs BreadcrumbItems="breadcrumbs" />
+
+    <MudText Typo="Typo.h4" GutterBottom="true">Completed Tickets</MudText>
+    <MudText Typo="Typo.body1" Color="Color.Secondary" Class="mb-4">
+        @(isTechnician
+            ? "Tickets assigned to you that closed with no follow-up for 24 hours."
+            : "Every ticket that closed with no follow-up for 24 hours.")
+    </MudText>
+
+    @if (error is not null)
+    {
+        <MudAlert Severity="Severity.Error" Dense="true" Class="mb-4">@error</MudAlert>
+    }
+
+    @if (items is null)
+    {
+        <MudText Color="Color.Secondary">Loading&hellip;</MudText>
+    }
+    else if (items.Count == 0)
+    {
+        <MudText Color="Color.Secondary">No completed tickets yet.</MudText>
+    }
+    else
+    {
+        <TicketsDataGrid Items="items" SelectedId="selectedId" OverviewBusy="overviewBusy" OnOverview="SelectAsync" OnDetails="OpenDrawerAsync" />
+    }
+
+    <TicketActionsDrawer Ticket="drawerTicket" @bind-Open="drawerOpen" OnChanged="OnDrawerChangedAsync" />
+
+    @if (overview is not null)
+    {
+        <MudText Typo="Typo.h5" Class="mt-6 mb-2">@overview.ticket.reference &mdash; downstream state</MudText>
+        <MudPaper Class="pa-4">
+            <MudText Typo="Typo.body2" Class="mb-2">
+                <strong>Assignment.API:</strong>
+                @if (overview.assignment is null)
+                {
+                    <MudChip T="string" Size="Size.Small" Color="Color.Warning">not assigned</MudChip>
+                }
+                else
+                {
+                    <span>@overview.assignment.technicianName (@overview.assignment.team)</span>
+                }
+            </MudText>
+            <MudText Typo="Typo.body2">
+                <strong>SLA.API:</strong>
+                @if (overview.slaClock is null)
+                {
+                    <MudChip T="string" Size="Size.Small" Color="Color.Warning">no clock</MudChip>
+                }
+                else
+                {
+                    <span>@overview.slaClock.status (stopped when the ticket was closed)</span>
+                }
+            </MudText>
+        </MudPaper>
+    }
+</AdminOrTechnicianOnly>
+
+@code {
+    // Cross-links back to Tickets/My Tickets, same pattern as Management's three-way split -
+    // see TicketBreadcrumbs. Support can never reach this page (see AdminOrTechnicianOnly), so
+    // includeCompleted is always true here: whichever of Admin/Technician is looking at this
+    // page can always get back to their own Tickets view.
+    private List<BreadcrumbItem> breadcrumbs =>
+        TicketBreadcrumbs.For("/tickets/completed", isTechnician ? "My Tickets" : "Tickets", includeCompleted: true);
+
+    private List<DtoTicket>? items;
+    private DtoTicketOverview? overview;
+    private Guid? selectedId;
+    private bool overviewBusy;
+    private string? error;
+
+    private DtoTicket? drawerTicket;
+    private bool drawerOpen;
+
+    private bool isTechnician;
+
+    [CascadingParameter]
+    private Task<AuthenticationState>? AuthenticationStateTask { get; set; }
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (AuthenticationStateTask is not null)
+        {
+            var state = await AuthenticationStateTask;
+            isTechnician = state.User.IsInRole("Technician");
+        }
+
+        await ReloadAsync();
+    }
+
+    private async Task ReloadAsync()
+    {
+        try
+        {
+            // "My Tickets" scoping (Admin sees everything, Technician only their assigned
+            // tickets) happens server-side now - see TicketService.ListAsync.
+            var result = await TicketsRepo.ListAsync(status: "Completed");
+            items = result.items;
+        }
+        catch (Exception ex) when (ex is not NavigationException)
+        {
+            error = $"Could not reach the gateway: {ex.Message}";
+        }
+    }
+
+    private async Task SelectAsync(Guid id)
+    {
+        selectedId = id;
+        overviewBusy = true;
+        try
+        {
+            overview = await TicketsRepo.GetOverviewAsync(id);
+        }
+        finally
+        {
+            overviewBusy = false;
+        }
+    }
+
+    // The list endpoint doesn't include comments (kept light for the grid) - the drawer needs
+    // the full ticket, so it's fetched fresh rather than reused from the already-loaded page.
+    private async Task OpenDrawerAsync(Guid id)
+    {
+        drawerTicket = await TicketsRepo.GetAsync(id);
+        drawerOpen = true;
+    }
+
+    private async Task OnDrawerChangedAsync()
+    {
+        if (drawerTicket is not null)
+        {
+            drawerTicket = await TicketsRepo.GetAsync(drawerTicket.id);
+        }
+
+        // A comment on a Completed ticket never reopens it (see Ticket.API.TicketService), so a
+        // reload here is just about picking up the new comment - the ticket stays in this list.
+        await ReloadAsync();
+    }
+}

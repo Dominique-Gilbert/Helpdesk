@@ -1,0 +1,47 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <RootNamespace>Helpdesk.Gateway.Interfacing</RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+  </ItemGroup>
+  <ItemGroup>
+    <PackageReference Include="AutoMapper" />
+    <PackageReference Include="Google.Protobuf" />
+    <PackageReference Include="Grpc.Net.ClientFactory" />
+    <PackageReference Include="Grpc.Tools">
+      <PrivateAssets>all</PrivateAssets>
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+    </PackageReference>
+  </ItemGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.AspNetCore.Authentication.JwtBearer" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\Helpdesk.Gateway.DTO\Helpdesk.Gateway.DTO.csproj" />
+    <ProjectReference Include="..\..\Shared\Helpdesk.Mapping\Helpdesk.Mapping.csproj" />
+    <ProjectReference Include="..\..\Shared\Helpdesk.ServiceDefaults\Helpdesk.ServiceDefaults.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <!-- Every backend contract, client-side only. Referenced by relative path so there is
+         exactly one copy of each .proto in the repo and it cannot drift from the server. -->
+    <Protobuf Include="..\..\Backends\Ticket.API\Protos\ticket.proto"
+              ProtoRoot="..\..\Backends\Ticket.API\Protos"
+              GrpcServices="Client" Link="Protos\ticket.proto" />
+    <Protobuf Include="..\..\Backends\Asset.API\Protos\asset.proto"
+              ProtoRoot="..\..\Backends\Asset.API\Protos"
+              GrpcServices="Client" Link="Protos\asset.proto" />
+    <Protobuf Include="..\..\Backends\Assignment.API\Protos\assignment.proto"
+              ProtoRoot="..\..\Backends\Assignment.API\Protos"
+              GrpcServices="Client" Link="Protos\assignment.proto" />
+    <Protobuf Include="..\..\Backends\SLA.API\Protos\sla.proto"
+              ProtoRoot="..\..\Backends\SLA.API\Protos"
+              GrpcServices="Client" Link="Protos\sla.proto" />
+    <Protobuf Include="..\..\Backends\User.API\Protos\user.proto"
+              ProtoRoot="..\..\Backends\User.API\Protos"
+              GrpcServices="Client" Link="Protos\user.proto" />
+    <Protobuf Include="..\..\Backends\Client.API\Protos\client.proto"
+              ProtoRoot="..\..\Backends\Client.API\Protos"
+              GrpcServices="Client" Link="Protos\client.proto" />
+  </ItemGroup>
+</Project>

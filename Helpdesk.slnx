@@ -1,0 +1,45 @@
+<Solution>
+  <Folder Name="/Backends/">
+    <Project Path="Backends/Asset.API/Asset.API.csproj" />
+    <Project Path="Backends/Asset.Domain/Asset.Domain.csproj" />
+    <Project Path="Backends/Asset.Infrastructure/Asset.Infrastructure.csproj" />
+    <Project Path="Backends/Assignment.API/Assignment.API.csproj" />
+    <Project Path="Backends/Client.API/Client.API.csproj" />
+    <Project Path="Backends/Client.Domain/Client.Domain.csproj" />
+    <Project Path="Backends/Client.Infrastructure/Client.Infrastructure.csproj" />
+    <Project Path="Backends/Assignment.Domain/Assignment.Domain.csproj" />
+    <Project Path="Backends/Assignment.Infrastructure/Assignment.Infrastructure.csproj" />
+    <Project Path="Backends/SLA.API/SLA.API.csproj" />
+    <Project Path="Backends/SLA.Domain/SLA.Domain.csproj" />
+    <Project Path="Backends/SLA.Infrastructure/SLA.Infrastructure.csproj" />
+    <Project Path="Backends/Ticket.API/Ticket.API.csproj" />
+    <Project Path="Backends/Ticket.Domain/Ticket.Domain.csproj" />
+    <Project Path="Backends/Ticket.Infrastructure/Ticket.Infrastructure.csproj" />
+    <Project Path="Backends/User.API/User.API.csproj" />
+    <Project Path="Backends/User.Domain/User.Domain.csproj" />
+    <Project Path="Backends/User.Infrastructure/User.Infrastructure.csproj" />
+  </Folder>
+  <Folder Name="/Frontends/">
+    <Project Path="Frontends/Helpdesk.Blazor/Helpdesk.Blazor.csproj" />
+  </Folder>
+  <Folder Name="/Gateway/">
+    <Project Path="Gateway/Helpdesk.Gateway.API/Helpdesk.Gateway.API.csproj" />
+    <Project Path="Gateway/Helpdesk.Gateway.DTO/Helpdesk.Gateway.DTO.csproj" />
+    <Project Path="Gateway/Helpdesk.Gateway.Interfacing/Helpdesk.Gateway.Interfacing.csproj" />
+  </Folder>
+  <Folder Name="/Shared/">
+    <Project Path="Shared/Helpdesk.Contracts/Helpdesk.Contracts.csproj" />
+    <Project Path="Shared/Helpdesk.Mapping/Helpdesk.Mapping.csproj" />
+    <Project Path="Shared/Helpdesk.Messaging/Helpdesk.Messaging.csproj" />
+    <Project Path="Shared/Helpdesk.Persistence/Helpdesk.Persistence.csproj" />
+    <Project Path="Shared/Helpdesk.ServiceDefaults/Helpdesk.ServiceDefaults.csproj" />
+    <Project Path="Shared/TenantTheming/TenantTheming.csproj" />
+  </Folder>
+  <Folder Name="/Testing/">
+    <Project Path="Testing/Asset.Tests/Asset.Tests.csproj" />
+    <Project Path="Testing/Assignment.Tests/Assignment.Tests.csproj" />
+    <Project Path="Testing/Helpdesk.Mock.Pipeline/Helpdesk.Mock.Pipeline.csproj" />
+    <Project Path="Testing/SLA.Tests/SLA.Tests.csproj" />
+  </Folder>
+  <Project Path="AppHost/Helpdesk.AppHost.csproj" />
+</Solution>

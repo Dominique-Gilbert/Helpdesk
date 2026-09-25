@@ -1,0 +1,74 @@
+@using TenantTheming
+@implements IDisposable
+@inject NavigationManager Navigation
+@inject TenantThemeService ThemeService
+
+<div class="nav-menu-shell">
+    @* Mirrors MainLayout's own AppBar branding (ThemeService.Branding) - this is the OTHER place
+       the product name/logo shows up, and it needs the same white-labeling, not the hardcoded
+       default, since the drawer is open by default and this is what's actually visible then. *@
+    <MudDrawerHeader Class="d-flex justify-space-between align-center">
+        <MudText Typo="Typo.h6" Class="nav-menu-title">@(ThemeService.Branding?.DisplayName ?? "IT Helpdesk & Assets")</MudText>
+        <MudImage Src="@(ThemeService.Branding?.LogoUrl ?? "images/logo.png")" Alt="@(ThemeService.Branding?.DisplayName ?? "IT Helpdesk & Assets")" Width="40" Height="40" />
+    </MudDrawerHeader>
+
+    @* Technicians and Support only ever get "My Tickets" here - everything else (Overview,
+       Assets, Management, SLA board, Users) is Admin-only, enforced again at the page level via
+       AdminOnly so this isn't just a hidden-link illusion. Completed Tickets has no nav entry
+       of its own - same as Management's Routing rules/Recent assignments, it is only ever
+       reached via the breadcrumb on the Tickets page (see TicketBreadcrumbs). Support never
+       gets that breadcrumb, not even scoped to their own - see AdminOrTechnicianOnly.
+       Clients is the one link here that is BaseRole-exclusive rather than Admin-plus-BaseRole -
+       Admin does not see it, enforced again at the page level via BaseRoleOnly. *@
+    <AuthorizeView Context="navAuthContext">
+        <Authorized>
+            @{
+                var isBaseRole = navAuthContext.User.IsInRole("BaseRole");
+                var isAdmin = navAuthContext.User.IsInRole("Admin") || isBaseRole;
+                var isRestricted = !isAdmin;
+            }
+            <MudNavMenu>
+                @if (isAdmin)
+                {
+                    <MudNavLink Href="" Match="NavLinkMatch.All" Icon="@Icons.Material.Filled.Dashboard">Overview</MudNavLink>
+                }
+                <MudNavLink Href="tickets" Icon="@Icons.Material.Filled.ConfirmationNumber">
+                    @(isRestricted ? "My Tickets" : "Tickets")
+                </MudNavLink>
+                @if (isAdmin)
+                {
+                    <MudNavLink Href="assets" Icon="@Icons.Material.Filled.Devices">Assets</MudNavLink>
+                    <MudNavLink Href="technicians" Icon="@Icons.Material.Filled.Engineering">Management</MudNavLink>
+                    <MudNavLink Href="sla" Icon="@Icons.Material.Filled.Timer">SLA board</MudNavLink>
+                    <MudNavLink Href="users" Icon="@Icons.Material.Filled.People">Users</MudNavLink>
+                }
+                @if (isBaseRole)
+                {
+                    <MudNavLink Href="clients" Icon="@Icons.Material.Filled.Business">Clients</MudNavLink>
+                }
+            </MudNavMenu>
+        </Authorized>
+    </AuthorizeView>
+
+    @* A second, always-visible way to log out - not everyone thinks to check the profile menu. *@
+    <div class="nav-menu-footer">
+        <MudDivider Class="mx-2 nav-menu-divider" />
+        <MudNavMenu>
+            <MudNavLink OnClick="Logout" Icon="@Icons.Material.Filled.Logout">Logout</MudNavLink>
+        </MudNavMenu>
+    </div>
+</div>
+
+@code {
+    // MudDrawer's ChildContent doesn't reliably re-render just because MainLayout (its parent)
+    // re-renders - confirmed by the AppBar's own branding (plain markup, no MudDrawer in between)
+    // updating live while this drawer header stayed stuck on the default until this subscribed
+    // directly, the same way MainLayout itself does.
+    protected override void OnInitialized() => ThemeService.OnChange += HandleThemeChanged;
+
+    private void HandleThemeChanged() => InvokeAsync(StateHasChanged);
+
+    public void Dispose() => ThemeService.OnChange -= HandleThemeChanged;
+
+    private void Logout() => Navigation.NavigateTo("/logout", forceLoad: true);
+}

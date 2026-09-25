@@ -1,0 +1,10 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <RootNamespace>Helpdesk.Mock.Pipeline</RootNamespace>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\..\Backends\Assignment.Domain\Assignment.Domain.csproj" />
+    <ProjectReference Include="..\..\Backends\SLA.Domain\SLA.Domain.csproj" />
+  </ItemGroup>
+</Project>

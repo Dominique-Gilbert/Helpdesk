@@ -1,0 +1,32 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+  <PropertyGroup>
+    <RootNamespace>Helpdesk.Assets.Api</RootNamespace>
+    <AssemblyName>Asset.API</AssemblyName>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="AutoMapper" />
+    <PackageReference Include="Grpc.AspNetCore" />
+    <PackageReference Include="Grpc.Net.ClientFactory" />
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Design">
+      <PrivateAssets>all</PrivateAssets>
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+    </PackageReference>
+    <PackageReference Include="Microsoft.Extensions.Diagnostics.HealthChecks.EntityFrameworkCore" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\Asset.Infrastructure\Asset.Infrastructure.csproj" />
+    <ProjectReference Include="..\..\Shared\Helpdesk.Mapping\Helpdesk.Mapping.csproj" />
+    <ProjectReference Include="..\..\Shared\Helpdesk.Persistence\Helpdesk.Persistence.csproj" />
+    <ProjectReference Include="..\..\Shared\Helpdesk.ServiceDefaults\Helpdesk.ServiceDefaults.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <!-- Own contract: server stubs. -->
+    <Protobuf Include="Protos\asset.proto" GrpcServices="Server" />
+    <!-- A sibling's contract, consumed across a project boundary: client stubs only.
+         ProtoRoot is required because the file lives outside this project's directory. -->
+    <Protobuf Include="..\Assignment.API\Protos\assignment.proto"
+              ProtoRoot="..\Assignment.API\Protos"
+              GrpcServices="Client"
+              Link="Protos\assignment.proto" />
+  </ItemGroup>
+</Project>

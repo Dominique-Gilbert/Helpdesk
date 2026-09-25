@@ -1,0 +1,13 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+  <PropertyGroup>
+    <RootNamespace>Helpdesk.Gateway.Api</RootNamespace>
+    <AssemblyName>Helpdesk.Gateway.API</AssemblyName>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Swashbuckle.AspNetCore" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\Helpdesk.Gateway.Interfacing\Helpdesk.Gateway.Interfacing.csproj" />
+    <ProjectReference Include="..\..\Shared\Helpdesk.ServiceDefaults\Helpdesk.ServiceDefaults.csproj" />
+  </ItemGroup>
+</Project>

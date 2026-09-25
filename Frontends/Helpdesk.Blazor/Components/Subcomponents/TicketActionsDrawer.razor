@@ -1,0 +1,328 @@
+@using Helpdesk.Gateway.Dto
+@using Microsoft.AspNetCore.Components.Authorization
+@inject TicketRepo TicketsRepo
+@inject SlaRepo Slas
+
+@* Available to any signed-in user (Admin or Technician) - there's no role restriction on
+   commenting or closing a ticket. The SLA override tab further down is Admin-only. *@
+<DetailDrawer Title="@($"Ticket {Ticket?.reference}")" Open="Open" OpenChanged="OpenChanged">
+    <ChildContent>
+        @if (Ticket is not null)
+        {
+            // A Razor inline template, not a sub-component - this content is Details-tab-only
+            // and needs the enclosing component's fields, which a separate .razor file would
+            // need re-parameterized for no benefit. Referenced twice below: directly for a
+            // Technician (no SLA tab to share the drawer with), inside a MudTabPanel for Admin.
+            RenderFragment detailsPanel = @<div>
+                    <MudStack Spacing="3">
+                        <div>
+                            <MudText Typo="Typo.subtitle1">@Ticket.title</MudText>
+                            <MudText Typo="Typo.body2" Color="Color.Secondary">@Ticket.description</MudText>
+                        </div>
+                        <MudStack Row="true" Spacing="2">
+                            <MudChip T="string" Size="Size.Small">@Ticket.category</MudChip>
+                            <MudChip T="string" Size="Size.Small">@Ticket.priority</MudChip>
+                            <MudChip T="string" Size="Size.Small" Color="@StatusColor(Ticket.status)">@Ticket.status</MudChip>
+                        </MudStack>
+
+                        @if (!string.IsNullOrWhiteSpace(Ticket.requestedByUsername))
+                        {
+                            <MudText Typo="Typo.caption" Color="Color.Secondary">
+                                Created by @Ticket.requestedByUsername (@Ticket.requestedByRole)
+                            </MudText>
+                        }
+
+                        <MudDivider Class="my-2" />
+
+                        <MudText Typo="Typo.subtitle2">Comments</MudText>
+                        @if (Ticket.comments.Count == 0)
+                        {
+                            <MudText Typo="Typo.body2" Color="Color.Secondary">No comments yet.</MudText>
+                        }
+                        else
+                        {
+                            @foreach (var comment in Ticket.comments.OrderByDescending(c => c.createdAtUtc))
+                            {
+                                <MudPaper Class="pa-2" Elevation="0" Style="background:var(--mud-palette-background-gray);">
+                                    <MudText Typo="Typo.caption" Color="Color.Secondary">@comment.author &middot; @comment.createdAtUtc.ToString("u")</MudText>
+                                    <MudText Typo="Typo.body2">@comment.body</MudText>
+                                </MudPaper>
+                            }
+                        }
+                    </MudStack>
+                </div>;
+
+                RenderFragment slaPanel = @<div>
+                    <MudStack Spacing="3">
+                        @if (slaClock is null)
+                        {
+                            <MudText Typo="Typo.body2" Color="Color.Secondary">No clock yet.</MudText>
+                        }
+                        else
+                        {
+                            <MudText Typo="Typo.body2">
+                                @slaClock.status, due @slaClock.dueAtUtc.ToString("u")
+                                <MudText Typo="Typo.caption" Color="Color.Secondary" Class="d-block">
+                                    @SlaTimeFormat.FormatRemaining(slaClock.remainingSeconds)
+                                </MudText>
+                            </MudText>
+
+                            @if (slaClock.status == "Stopped")
+                            {
+                                <MudText Typo="Typo.caption" Color="Color.Secondary">Stopped clocks (closed tickets) cannot be adjusted.</MudText>
+                            }
+                            else
+                            {
+                                @if (adjustError is not null)
+                                {
+                                    <MudAlert Severity="Severity.Error" Dense="true">@adjustError</MudAlert>
+                                }
+                                <MudStack Row="true" Spacing="2">
+                                    <MudNumericField @bind-Value="adjustDeltaMinutes" Label="Delta (minutes)" HelperText="+ extends, - shrinks" Style="max-width:160px;" />
+                                    <MudTextField @bind-Value="adjustReason" Label="Reason" FullWidth="true" />
+                                </MudStack>
+                                <MudButton Variant="Variant.Outlined" Size="Size.Small" Disabled="@(adjustBusy || adjustDeltaMinutes == 0 || string.IsNullOrWhiteSpace(adjustReason))" OnClick="AdjustSlaAsync">
+                                    @(adjustBusy ? "Applying..." : "Apply adjustment")
+                                </MudButton>
+                            }
+
+                            @if (slaClock.adjustments.Count > 0)
+                            {
+                                <MudDivider Class="my-2" />
+                                <MudText Typo="Typo.subtitle2">Adjustment history</MudText>
+                                @foreach (var adjustment in slaClock.adjustments)
+                                {
+                                    <MudText Typo="Typo.caption" Color="Color.Secondary" Class="d-block">
+                                        @(adjustment.deltaMinutes > 0 ? "+" : "")@(adjustment.deltaMinutes) min by @adjustment.adjustedBy @adjustment.adjustedAtUtc.ToString("u") - @adjustment.reason
+                                    </MudText>
+                                }
+                            }
+                        }
+                    </MudStack>
+                </div>;
+
+            @* Only this part scrolls - a long comment list must not push the input below it
+               out of view, so it lives outside this div, pinned at the bottom instead. *@
+            <div class="ticket-drawer-scroll">
+                @if (isAdmin)
+                {
+                    <MudTabs Class="helpdesk-tabs" @bind-ActivePanelIndex="activePanelIndex">
+                        <MudTabPanel Text="Details">
+                            @detailsPanel
+                        </MudTabPanel>
+                        <MudTabPanel Text="SLA">
+                            @slaPanel
+                        </MudTabPanel>
+                    </MudTabs>
+                }
+                else
+                {
+                    @detailsPanel
+                }
+            </div>
+
+            @* Comments are a Details-tab concern - the SLA tab has its own "Apply adjustment"
+               action and shouldn't also offer an unrelated comment box below it. *@
+            @if (!isAdmin || activePanelIndex == 0)
+            {
+                <div class="ticket-drawer-input">
+                    <MudStack Spacing="3">
+                        @if (error is not null)
+                        {
+                            <MudAlert Severity="Severity.Error" Dense="true">@error</MudAlert>
+                        }
+
+                        @if (Ticket.status == "Closed")
+                        {
+                            <MudAlert Severity="Severity.Info" Dense="true">This ticket is closed. Adding a comment reopens it.</MudAlert>
+                        }
+                        else if (Ticket.status == "Completed")
+                        {
+                            <MudAlert Severity="Severity.Info" Dense="true">This ticket is completed and archived.</MudAlert>
+                        }
+
+                        @* Commenting stays available even when Closed - that is how a ticket reopens.
+                           Completed is the only truly final state, but a comment there is still just
+                           a comment on the record; it does not reopen anything. *@
+                        <MudTextField @bind-Value="commentBody" Label="Add a comment" Variant="Variant.Text" Lines="3" FullWidth="true" Class="comment-textarea" />
+                    </MudStack>
+                </div>
+            }
+        }
+    </ChildContent>
+    <FooterContent>
+        @if (Ticket is not null)
+        {
+            <MudStack Row="true" Justify="Justify.SpaceBetween" Spacing="2" Class="pa-3">
+                @* Same Details-tab restriction as the comment box above - nothing to add a
+                   comment to from the SLA tab if the box itself isn't showing. *@
+                @if (!isAdmin || activePanelIndex == 0)
+                {
+                    <MudButton Variant="Variant.Outlined" Disabled="@(busy || string.IsNullOrWhiteSpace(commentBody))" OnClick="AddCommentAsync">
+                        @(busy ? "Adding..." : "Add comment")
+                    </MudButton>
+                }
+                @* Nothing left to close on a ticket that is already Closed or Completed. *@
+                @if (Ticket.status is not ("Closed" or "Completed"))
+                {
+                    <MudButton Variant="Variant.Filled" Color="Color.Primary" Disabled="@busy" OnClick="CloseTicketAsync">
+                        @(busy ? "Closing..." : "Close ticket")
+                    </MudButton>
+                }
+            </MudStack>
+        }
+    </FooterContent>
+</DetailDrawer>
+
+@code {
+    [Parameter]
+    public DtoTicket? Ticket { get; set; }
+
+    [Parameter]
+    public bool Open { get; set; }
+
+    [Parameter]
+    public EventCallback<bool> OpenChanged { get; set; }
+
+    /// <summary>Raised after a comment is added or the ticket is closed, so the parent page can refresh.</summary>
+    [Parameter]
+    public EventCallback OnChanged { get; set; }
+
+    [CascadingParameter]
+    private Task<AuthenticationState>? AuthenticationStateTask { get; set; }
+
+    private string commentBody = string.Empty;
+    private bool busy;
+    private string? error;
+
+    private bool isAdmin;
+    private int activePanelIndex;
+    private DtoSlaClock? slaClock;
+    private int adjustDeltaMinutes = 60;
+    private string adjustReason = string.Empty;
+    private bool adjustBusy;
+    private string? adjustError;
+
+    private Guid? loadedForTicketId;
+
+    private static Color StatusColor(string status) => status switch
+    {
+        "Closed" or "Completed" => Color.Default,
+        "Reopened" => Color.Warning,
+        _ => Color.Primary
+    };
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (Ticket is null)
+        {
+            commentBody = string.Empty;
+            slaClock = null;
+            loadedForTicketId = null;
+            return;
+        }
+
+        if (AuthenticationStateTask is not null)
+        {
+            var state = await AuthenticationStateTask;
+            isAdmin = state.User.IsInRole("Admin") || state.User.IsInRole("BaseRole");
+        }
+
+        // Only reload the clock when the drawer switches to a different ticket - not on every
+        // parent re-render while it's open, or an unrelated refresh would wipe an in-progress edit.
+        if (isAdmin && loadedForTicketId != Ticket.id)
+        {
+            loadedForTicketId = Ticket.id;
+            activePanelIndex = 0;
+            adjustError = null;
+            adjustDeltaMinutes = 60;
+            adjustReason = string.Empty;
+            slaClock = await Slas.GetForTicketAsync(Ticket.id);
+        }
+    }
+
+    private async Task<string> GetAuthorAsync()
+    {
+        if (AuthenticationStateTask is null) return "Unknown";
+        var state = await AuthenticationStateTask;
+        return state.User.Identity?.Name ?? "Unknown";
+    }
+
+    private async Task AddCommentAsync()
+    {
+        if (Ticket is null || string.IsNullOrWhiteSpace(commentBody)) return;
+
+        error = null;
+        busy = true;
+        try
+        {
+            var author = await GetAuthorAsync();
+            await TicketsRepo.AddCommentAsync(Ticket.id, new AddCommentDto { author = author, body = commentBody });
+            commentBody = string.Empty;
+            await OnChanged.InvokeAsync();
+        }
+        catch (Exception ex) when (ex is not NavigationException)
+        {
+            error = ex.Message;
+        }
+        finally
+        {
+            busy = false;
+        }
+    }
+
+    private async Task CloseTicketAsync()
+    {
+        if (Ticket is null) return;
+
+        error = null;
+        busy = true;
+        try
+        {
+            if (!string.IsNullOrWhiteSpace(commentBody))
+            {
+                var author = await GetAuthorAsync();
+                await TicketsRepo.AddCommentAsync(Ticket.id, new AddCommentDto { author = author, body = commentBody });
+                commentBody = string.Empty;
+            }
+
+            await TicketsRepo.CloseAsync(Ticket.id);
+            await OnChanged.InvokeAsync();
+        }
+        catch (Exception ex) when (ex is not NavigationException)
+        {
+            error = ex.Message;
+        }
+        finally
+        {
+            busy = false;
+        }
+    }
+
+    private async Task AdjustSlaAsync()
+    {
+        if (Ticket is null || adjustDeltaMinutes == 0 || string.IsNullOrWhiteSpace(adjustReason)) return;
+
+        adjustError = null;
+        adjustBusy = true;
+        try
+        {
+            slaClock = await Slas.AdjustAsync(Ticket.id, new AdjustSlaClockDto
+            {
+                deltaMinutes = adjustDeltaMinutes,
+                reason = adjustReason.Trim()
+            });
+            adjustReason = string.Empty;
+            await OnChanged.InvokeAsync();
+        }
+        catch (Exception ex) when (ex is not NavigationException)
+        {
+            adjustError = ex.Message;
+        }
+        finally
+        {
+            adjustBusy = false;
+        }
+    }
+
+}

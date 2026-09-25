@@ -1,0 +1,55 @@
+@using Helpdesk.Gateway.Dto
+
+<MudDataGrid Items="@Items" Hover="true" Dense="true" FixedHeader="true" RowsPerPage="15" Class="@($"helpdesk-table {Class}")">
+    <Columns>
+        <PropertyColumn Property="x => x.rank" Title="Rank" />
+        <PropertyColumn Property="x => x.name" Title="Name" />
+        <TemplateColumn Title="Category">
+            <CellTemplate>@(string.IsNullOrWhiteSpace(context.Item.category) ? "any" : context.Item.category)</CellTemplate>
+        </TemplateColumn>
+        <PropertyColumn Property="x => x.minPriority" Title="Min priority" />
+        <PropertyColumn Property="x => x.team" Title="Team" />
+        @* BaseRole-only: an Admin's grid is already scoped to their own single Client, so a
+           per-row Client label would be redundant - see UsersDataGrid for the same rule. *@
+        @if (ClientNames is not null)
+        {
+            <TemplateColumn Title="Client" Sortable="false">
+                <CellTemplate>
+                    @(context.Item.clientId is { } id && ClientNames.TryGetValue(id, out var name) ? name : "-")
+                </CellTemplate>
+            </TemplateColumn>
+        }
+        <TemplateColumn Title="Status">
+            <CellTemplate>
+                <MudChip T="string" Size="Size.Small" Color="@(context.Item.isActive ? Color.Success : Color.Default)">
+                    @(context.Item.isActive ? "active" : "inactive")
+                </MudChip>
+            </CellTemplate>
+        </TemplateColumn>
+        <TemplateColumn Title="" Sortable="false">
+            <CellTemplate>
+                <MudButton Variant="Variant.Outlined" Color="Color.Primary" Size="Size.Small"
+                           OnClick="() => OnEdit.InvokeAsync(context.Item)">
+                    Edit
+                </MudButton>
+            </CellTemplate>
+        </TemplateColumn>
+    </Columns>
+    <PagerContent>
+        <MudDataGridPager T="DtoRoutingRule" />
+    </PagerContent>
+</MudDataGrid>
+
+@code {
+    [Parameter, EditorRequired]
+    public IEnumerable<DtoRoutingRule> Items { get; set; } = [];
+
+    [Parameter]
+    public string? Class { get; set; }
+
+    [Parameter]
+    public EventCallback<DtoRoutingRule> OnEdit { get; set; }
+
+    [Parameter]
+    public IReadOnlyDictionary<Guid, string>? ClientNames { get; set; }
+}

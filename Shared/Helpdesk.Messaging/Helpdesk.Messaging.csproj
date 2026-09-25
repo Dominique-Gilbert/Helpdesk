@@ -1,0 +1,14 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <RootNamespace>Helpdesk.Messaging</RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+  </ItemGroup>
+  <ItemGroup>
+    <PackageReference Include="Pulsar.Client" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\Helpdesk.Contracts\Helpdesk.Contracts.csproj" />
+  </ItemGroup>
+</Project>

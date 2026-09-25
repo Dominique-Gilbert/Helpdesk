@@ -1,0 +1,17 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <RootNamespace>TenantTheming</RootNamespace>
+    <!--
+      Deliberately product-agnostic: no reference to anything under Helpdesk.* or Gateway.*.
+      The only dependency is MudBlazor, because that's the one thing every consumer of this
+      library is assumed to already use for its own base theme. Everything else - how a
+      tenant id is resolved (JWT claim, URL slug, whatever), how branding is fetched (HTTP,
+      gRPC, a local cache) - is supplied by the host app through ITenantBrandingProvider, not
+      baked in here. That's what makes this portable to a different app (e.g. SupercardWeb)
+      with nothing more than a new ITenantBrandingProvider implementation and a DI registration.
+    -->
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="MudBlazor" />
+  </ItemGroup>
+</Project>

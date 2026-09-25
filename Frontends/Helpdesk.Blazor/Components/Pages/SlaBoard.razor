@@ -1,0 +1,63 @@
+@page "/sla"
+@implements IDisposable
+@using Helpdesk.Blazor.Components.Subcomponents
+@using Helpdesk.Blazor.Services
+@inject SlaRepo Slas
+@inject BaseRoleViewContext ViewContext
+
+<AdminOnly>
+    <MudText Typo="Typo.h4" GutterBottom="true">SLA board</MudText>
+    <MudText Typo="Typo.body1" Color="Color.Secondary" Class="mb-4">One clock per ticket, started by SLA.API when it consumed Ticket.Created.</MudText>
+
+    <MudButton Variant="Variant.Outlined" Size="Size.Small" Disabled="@busy" OnClick="ReloadClickAsync" Class="mb-4">
+        @(busy ? "Refreshing..." : "Refresh")
+    </MudButton>
+
+    @if (clocks is null)
+    {
+        <MudText Color="Color.Secondary">Loading&hellip;</MudText>
+    }
+    else if (clocks.Count == 0)
+    {
+        <MudText Color="Color.Secondary">No clocks yet. Create a ticket and this fills in on its own.</MudText>
+    }
+    else
+    {
+        <SlaDataGrid Items="clocks" />
+    }
+</AdminOnly>
+
+@code {
+    private List<DtoSlaClock>? clocks;
+    private bool busy;
+
+    protected override Task OnInitializedAsync()
+    {
+        // BaseRole's profile-menu switcher - reload this board whenever it changes Client.
+        ViewContext.OnChange += HandleViewChanged;
+        return ReloadAsync();
+    }
+
+    private async Task ReloadClickAsync()
+    {
+        busy = true;
+        try
+        {
+            await ReloadAsync();
+        }
+        finally
+        {
+            busy = false;
+        }
+    }
+
+    private async Task ReloadAsync() => clocks = await Slas.ListAsync(clientId: ViewContext.SelectedClientId);
+
+    private void HandleViewChanged() => InvokeAsync(async () =>
+    {
+        await ReloadAsync();
+        StateHasChanged();
+    });
+
+    public void Dispose() => ViewContext.OnChange -= HandleViewChanged;
+}

@@ -1,0 +1,57 @@
+@using Helpdesk.Gateway.Dto
+
+<MudDataGrid Items="@Items" Hover="true" Dense="true" FixedHeader="true" RowsPerPage="15" Class="@($"helpdesk-table {Class}")">
+    <Columns>
+        <PropertyColumn Property="x => x.username" Title="Username" />
+        <PropertyColumn Property="x => x.fullName" Title="Full name" />
+        <TemplateColumn Title="Role" Sortable="false">
+            <CellTemplate>
+                <MudChip T="string" Size="Size.Small" Color="Color.Primary">@context.Item.role</MudChip>
+            </CellTemplate>
+        </TemplateColumn>
+        @* BaseRole-only: an Admin's grid is already scoped to their own single Client, so
+           showing this column there would just repeat the same value on every row. *@
+        @if (ClientNames is not null)
+        {
+            <TemplateColumn Title="Client" Sortable="false">
+                <CellTemplate>
+                    @(context.Item.clientId is { } id && ClientNames.TryGetValue(id, out var name) ? name : "-")
+                </CellTemplate>
+            </TemplateColumn>
+        }
+        <TemplateColumn Title="Status" Sortable="false">
+            <CellTemplate>
+                @if (context.Item.isActive)
+                {
+                    <MudChip T="string" Size="Size.Small" Color="Color.Success">active</MudChip>
+                }
+                else
+                {
+                    <MudChip T="string" Size="Size.Small" Color="Color.Default">inactive</MudChip>
+                }
+            </CellTemplate>
+        </TemplateColumn>
+        <TemplateColumn Title="" Sortable="false">
+            <CellTemplate>
+                <MudIconButton Icon="@Icons.Material.Filled.Edit" Size="Size.Small" OnClick="@(() => OnEdit.InvokeAsync(context.Item))" />
+            </CellTemplate>
+        </TemplateColumn>
+    </Columns>
+    <PagerContent>
+        <MudDataGridPager T="DtoUserSummary" />
+    </PagerContent>
+</MudDataGrid>
+
+@code {
+    [Parameter, EditorRequired]
+    public IEnumerable<DtoUserSummary> Items { get; set; } = [];
+
+    [Parameter]
+    public EventCallback<DtoUserSummary> OnEdit { get; set; }
+
+    [Parameter]
+    public string? Class { get; set; }
+
+    [Parameter]
+    public IReadOnlyDictionary<Guid, string>? ClientNames { get; set; }
+}

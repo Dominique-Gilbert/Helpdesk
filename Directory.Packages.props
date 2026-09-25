@@ -1,0 +1,65 @@
+<Project>
+  <PropertyGroup>
+    <ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally>
+    <CentralPackageTransitivePinningEnabled>false</CentralPackageTransitivePinningEnabled>
+  </PropertyGroup>
+
+  <!--
+    Version pins are deliberate, not accidental:
+      AutoMapper  13.x  - last MIT-licensed line before the commercial 15.x change.
+        Accepted risk (reviewed 2026-09-18): NU1903 flags GHSA-rvv3-g6hj-g44x, a stack-overflow
+        DoS via uncontrolled recursion on deeply nested object graphs. The only fix is 15.1.1+/
+        16.1.1+, both commercial-licensed. Every mapper.Map<T>() call in this solution maps a
+        bounded, server-controlled gRPC response or domain entity to a DTO - never an
+        attacker-supplied payload (Create/Update request DTOs are hand-copied into gRPC request
+        messages, not run through AutoMapper) - so the vulnerable code path is unreachable here.
+        Re-review if that ever changes (e.g. a future mapper.Map<T>() fed by raw client JSON).
+    Bump these only on purpose, and note it in the PR's Risks section.
+  -->
+  <ItemGroup Label="Data">
+    <PackageVersion Include="Microsoft.EntityFrameworkCore" Version="9.0.0" />
+    <PackageVersion Include="Microsoft.EntityFrameworkCore.Design" Version="9.0.0" />
+    <PackageVersion Include="Microsoft.EntityFrameworkCore.Relational" Version="9.0.0" />
+    <PackageVersion Include="Microsoft.EntityFrameworkCore.SqlServer" Version="9.0.0" />
+  </ItemGroup>
+
+  <ItemGroup Label="gRPC">
+    <PackageVersion Include="Google.Protobuf" Version="3.28.3" />
+    <PackageVersion Include="Grpc.AspNetCore" Version="2.66.0" />
+    <PackageVersion Include="Grpc.Net.Client" Version="2.66.0" />
+    <PackageVersion Include="Grpc.Net.ClientFactory" Version="2.66.0" />
+    <PackageVersion Include="Grpc.Tools" Version="2.67.0" />
+  </ItemGroup>
+
+  <ItemGroup Label="Messaging">
+    <PackageVersion Include="Pulsar.Client" Version="3.18.0" />
+  </ItemGroup>
+
+  <ItemGroup Label="Mapping and hosting">
+    <PackageVersion Include="Aspire.Hosting.AppHost" Version="9.0.0" />
+    <PackageVersion Include="AutoMapper" Version="13.0.1" />
+    <PackageVersion Include="Microsoft.Extensions.DependencyInjection" Version="9.0.0" />
+    <PackageVersion Include="Microsoft.Extensions.Configuration.Binder" Version="9.0.0" />
+    <PackageVersion Include="Microsoft.Extensions.Diagnostics.HealthChecks.EntityFrameworkCore" Version="9.0.0" />
+    <PackageVersion Include="Microsoft.Extensions.Http" Version="9.0.0" />
+    <PackageVersion Include="Microsoft.Extensions.ServiceDiscovery" Version="9.0.0" />
+    <PackageVersion Include="Swashbuckle.AspNetCore" Version="7.2.0" />
+  </ItemGroup>
+
+  <ItemGroup Label="Auth">
+    <PackageVersion Include="Microsoft.AspNetCore.Authentication.JwtBearer" Version="9.0.0" />
+    <PackageVersion Include="System.IdentityModel.Tokens.Jwt" Version="8.2.1" />
+  </ItemGroup>
+
+  <ItemGroup Label="UI">
+    <PackageVersion Include="MudBlazor" Version="9.9.0" />
+    <PackageVersion Include="FluentValidation" Version="12.1.1" />
+  </ItemGroup>
+
+  <ItemGroup Label="Testing">
+    <PackageVersion Include="Microsoft.NET.Test.Sdk" Version="17.12.0" />
+    <PackageVersion Include="xunit" Version="2.9.2" />
+    <PackageVersion Include="xunit.runner.visualstudio" Version="2.8.2" />
+    <PackageVersion Include="coverlet.collector" Version="6.0.2" />
+  </ItemGroup>
+</Project>

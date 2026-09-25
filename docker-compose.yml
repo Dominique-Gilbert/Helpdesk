@@ -1,0 +1,295 @@
+name: helpdesk
+
+# One command, nothing outside localhost: five databases, one broker, five gRPC services,
+# one REST gateway, one Blazor client.
+#
+# Port convention inside the network: 8080 = HTTP/1.1 (health, REST), 8081 = HTTP/2 (gRPC).
+# Plaintext h2c and HTTP/1.1 cannot reliably share a port, hence two of them.
+
+x-db-environment: &db-environment
+  ACCEPT_EULA: "Y"
+  MSSQL_SA_PASSWORD: "YourStrong!Passw0rd"
+
+x-db-healthcheck: &db-healthcheck
+  interval: 10s
+  timeout: 10s
+  retries: 20
+  start_period: 20s
+
+x-service-healthcheck: &service-healthcheck
+  test: ["CMD-SHELL", "curl -fsS http://localhost:8080/health/readiness || exit 1"]
+  interval: 10s
+  timeout: 5s
+  retries: 12
+  start_period: 30s
+
+# Every service that calls AddHelpdeskJwtAuth() needs the same signing key/issuer/audience to
+# validate each other's tokens - fixed dev values, not meant to survive past local development
+# (mirrors the AppHost's jwt-signing-key/jwt-issuer/jwt-audience parameters).
+x-jwt-environment: &jwt-environment
+  Jwt__SigningKey: "helpdesk-dev-signing-key-change-me-32chars!"
+  Jwt__Issuer: "helpdesk"
+  Jwt__Audience: "helpdesk"
+
+services:
+  # --- shared SQL Server instance for all backend databases ---------------------------
+  sqlserver:
+    image: mcr.microsoft.com/mssql/server:2022-latest
+    environment:
+      <<: *db-environment
+      MSSQL_PID: Developer
+    # Host port 14330, not the standard 1433: every service inside the compose network still
+    # reaches this over the internal "sqlserver:1433" DNS name regardless of the host mapping,
+    # so this only matters for connecting an external tool (SSMS, sqlcmd) from the host. Left
+    # off 1433 on purpose - a dev machine that also runs a native SQL Server instance (as this
+    # one does) already owns that port, and `docker compose up` fails outright on the conflict
+    # otherwise. Confirmed by hitting exactly that failure during a from-empty verification run.
+    ports: ["14330:1433"]
+    volumes: ["sqlserver-data:/var/opt/mssql"]
+    healthcheck:
+      <<: *db-healthcheck
+      test: ["CMD-SHELL", "/opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -P \"YourStrong!Passw0rd\" -C -Q \"SELECT 1\" || exit 1"]
+    networks: [helpdesk]
+
+  # --- event bus -----------------------------------------------------------------------
+  pulsar:
+    image: apachepulsar/pulsar:4.2.2
+    command: ["bin/pulsar", "standalone"]
+    environment:
+      PULSAR_PREFIX_advertisedAddress: pulsar
+    ports:
+      - "6651:6650"
+      - "8082:8080"
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost:8080/admin/v2/clusters || exit 1"]
+      interval: 10s
+      timeout: 10s
+      retries: 20
+      start_period: 30s
+    networks: [helpdesk]
+
+  # One-shot: provisions the "helpdesk" tenant/namespace/topics, then exits. Idempotent
+  # (every pulsar-admin call is "|| true"), same script the AppHost's PulsarFactory runs.
+  pulsar-init:
+    image: apachepulsar/pulsar:4.2.2
+    environment:
+      PULSAR_ADMIN_URL: http://pulsar:8080
+    entrypoint: ["sh", "-c"]
+    command:
+      - |
+        echo 'Waiting for Pulsar admin API...'
+        COUNT=0
+        until curl -sf "$$PULSAR_ADMIN_URL/admin/v2/clusters" > /dev/null; do
+          COUNT=$$((COUNT+1))
+          if [ $$COUNT -gt 90 ]; then echo 'Timeout waiting for Pulsar'; exit 1; fi
+          sleep 2
+        done
+        echo 'Pulsar is up'
+        bin/pulsar-admin --admin-url "$$PULSAR_ADMIN_URL" tenants create helpdesk --allowed-clusters standalone || true
+        bin/pulsar-admin --admin-url "$$PULSAR_ADMIN_URL" namespaces create helpdesk/events || true
+        bin/pulsar-admin --admin-url "$$PULSAR_ADMIN_URL" topics create persistent://helpdesk/events/ticket-created || true
+        bin/pulsar-admin --admin-url "$$PULSAR_ADMIN_URL" topics create persistent://helpdesk/events/sla-breached || true
+        bin/pulsar-admin --admin-url "$$PULSAR_ADMIN_URL" topics create persistent://helpdesk/events/ticket-closed || true
+        bin/pulsar-admin --admin-url "$$PULSAR_ADMIN_URL" topics create persistent://helpdesk/events/ticket-reopened || true
+    depends_on:
+      pulsar:
+        condition: service_healthy
+    networks: [helpdesk]
+
+  # --- domain services -----------------------------------------------------------------
+  ticket-api:
+    build:
+      context: .
+      dockerfile: docker.ticket
+    environment:
+      <<: *jwt-environment
+      ASPNETCORE_ENVIRONMENT: Production
+      Kestrel__Endpoints__Http__Url: http://0.0.0.0:8080
+      Kestrel__Endpoints__Http__Protocols: Http1
+      Kestrel__Endpoints__Grpc__Url: http://0.0.0.0:8081
+      Kestrel__Endpoints__Grpc__Protocols: Http2
+      ConnectionStrings__DefaultConnection: Server=sqlserver;Database=helpdesk_ticket;User Id=sa;Password=YourStrong!Passw0rd;TrustServerCertificate=True;Encrypt=False;MultipleActiveResultSets=true;
+      PULSAR_SERVICE_URL: pulsar://pulsar:6650
+    ports:
+      - "8101:8080"
+      - "8111:8081"
+    depends_on:
+      sqlserver:
+        condition: service_healthy
+      pulsar-init:
+        condition: service_completed_successfully
+    healthcheck: *service-healthcheck
+    networks: [helpdesk]
+
+  asset-api:
+    build:
+      context: .
+      dockerfile: docker.asset
+    environment:
+      <<: *jwt-environment
+      ASPNETCORE_ENVIRONMENT: Production
+      Kestrel__Endpoints__Http__Url: http://0.0.0.0:8080
+      Kestrel__Endpoints__Http__Protocols: Http1
+      Kestrel__Endpoints__Grpc__Url: http://0.0.0.0:8081
+      Kestrel__Endpoints__Grpc__Protocols: Http2
+      ConnectionStrings__DefaultConnection: Server=sqlserver;Database=helpdesk_asset;User Id=sa;Password=YourStrong!Passw0rd;TrustServerCertificate=True;Encrypt=False;MultipleActiveResultSets=true;
+      Services__assignment-api__grpc__0: assignment-api:8081
+    ports:
+      - "8102:8080"
+      - "8112:8081"
+    depends_on:
+      sqlserver:
+        condition: service_healthy
+      assignment-api:
+        condition: service_started
+    healthcheck: *service-healthcheck
+    networks: [helpdesk]
+
+  assignment-api:
+    build:
+      context: .
+      dockerfile: docker.assignment
+    environment:
+      <<: *jwt-environment
+      ASPNETCORE_ENVIRONMENT: Production
+      Kestrel__Endpoints__Http__Url: http://0.0.0.0:8080
+      Kestrel__Endpoints__Http__Protocols: Http1
+      Kestrel__Endpoints__Grpc__Url: http://0.0.0.0:8081
+      Kestrel__Endpoints__Grpc__Protocols: Http2
+      ConnectionStrings__DefaultConnection: Server=sqlserver;Database=helpdesk_assignment;User Id=sa;Password=YourStrong!Passw0rd;TrustServerCertificate=True;Encrypt=False;MultipleActiveResultSets=true;
+      PULSAR_SERVICE_URL: pulsar://pulsar:6650
+    ports:
+      - "8103:8080"
+      - "8113:8081"
+    depends_on:
+      sqlserver:
+        condition: service_healthy
+      pulsar-init:
+        condition: service_completed_successfully
+    healthcheck: *service-healthcheck
+    networks: [helpdesk]
+
+  sla-api:
+    build:
+      context: .
+      dockerfile: docker.sla
+    environment:
+      <<: *jwt-environment
+      ASPNETCORE_ENVIRONMENT: Production
+      Kestrel__Endpoints__Http__Url: http://0.0.0.0:8080
+      Kestrel__Endpoints__Http__Protocols: Http1
+      Kestrel__Endpoints__Grpc__Url: http://0.0.0.0:8081
+      Kestrel__Endpoints__Grpc__Protocols: Http2
+      ConnectionStrings__DefaultConnection: Server=sqlserver;Database=helpdesk_sla;User Id=sa;Password=YourStrong!Passw0rd;TrustServerCertificate=True;Encrypt=False;MultipleActiveResultSets=true;
+      PULSAR_SERVICE_URL: pulsar://pulsar:6650
+    ports:
+      - "8104:8080"
+      - "8114:8081"
+    depends_on:
+      sqlserver:
+        condition: service_healthy
+      pulsar-init:
+        condition: service_completed_successfully
+    healthcheck: *service-healthcheck
+    networks: [helpdesk]
+
+  # User.API neither publishes nor consumes events - no Pulsar wiring, unlike the other four.
+  user-api:
+    build:
+      context: .
+      dockerfile: docker.user
+    environment:
+      <<: *jwt-environment
+      ASPNETCORE_ENVIRONMENT: Production
+      Kestrel__Endpoints__Http__Url: http://0.0.0.0:8080
+      Kestrel__Endpoints__Http__Protocols: Http1
+      Kestrel__Endpoints__Grpc__Url: http://0.0.0.0:8081
+      Kestrel__Endpoints__Grpc__Protocols: Http2
+      ConnectionStrings__DefaultConnection: Server=sqlserver;Database=helpdesk_user;User Id=sa;Password=YourStrong!Passw0rd;TrustServerCertificate=True;Encrypt=False;MultipleActiveResultSets=true;
+    ports:
+      - "8105:8080"
+      - "8115:8081"
+    depends_on:
+      sqlserver:
+        condition: service_healthy
+    healthcheck: *service-healthcheck
+    networks: [helpdesk]
+
+  # Client.API neither publishes nor consumes events - same shape as User.API, no Pulsar wiring.
+  client-api:
+    build:
+      context: .
+      dockerfile: docker.client
+    environment:
+      <<: *jwt-environment
+      ASPNETCORE_ENVIRONMENT: Production
+      Kestrel__Endpoints__Http__Url: http://0.0.0.0:8080
+      Kestrel__Endpoints__Http__Protocols: Http1
+      Kestrel__Endpoints__Grpc__Url: http://0.0.0.0:8081
+      Kestrel__Endpoints__Grpc__Protocols: Http2
+      ConnectionStrings__DefaultConnection: Server=sqlserver;Database=helpdesk_client;User Id=sa;Password=YourStrong!Passw0rd;TrustServerCertificate=True;Encrypt=False;MultipleActiveResultSets=true;
+    ports:
+      - "8106:8080"
+      - "8116:8081"
+    depends_on:
+      sqlserver:
+        condition: service_healthy
+    healthcheck: *service-healthcheck
+    networks: [helpdesk]
+
+  # --- gateway: the only REST surface ---------------------------------------------------
+  gateway:
+    build:
+      context: .
+      dockerfile: docker.gateway
+    environment:
+      <<: *jwt-environment
+      ASPNETCORE_ENVIRONMENT: Production
+      Kestrel__Endpoints__Http__Url: http://0.0.0.0:8080
+      Kestrel__Endpoints__Http__Protocols: Http1
+      Services__ticket-api__grpc__0: ticket-api:8081
+      Services__asset-api__grpc__0: asset-api:8081
+      Services__assignment-api__grpc__0: assignment-api:8081
+      Services__sla-api__grpc__0: sla-api:8081
+      Services__user-api__grpc__0: user-api:8081
+      Services__client-api__grpc__0: client-api:8081
+    ports:
+      - "8080:8080"
+    depends_on:
+      ticket-api:
+        condition: service_healthy
+      asset-api:
+        condition: service_healthy
+      assignment-api:
+        condition: service_healthy
+      sla-api:
+        condition: service_healthy
+      user-api:
+        condition: service_healthy
+      client-api:
+        condition: service_healthy
+    healthcheck: *service-healthcheck
+    networks: [helpdesk]
+
+  # --- frontend -------------------------------------------------------------------------
+  blazor:
+    build:
+      context: .
+      dockerfile: docker.blazor
+    environment:
+      ASPNETCORE_ENVIRONMENT: Production
+      Kestrel__Endpoints__Http__Url: http://0.0.0.0:8080
+      Services__gateway__http__0: gateway:8080
+    ports:
+      - "5000:8080"
+    depends_on:
+      gateway:
+        condition: service_healthy
+    networks: [helpdesk]
+
+networks:
+  helpdesk:
+    driver: bridge
+
+volumes:
+  sqlserver-data:

@@ -1,0 +1,187 @@
+syntax = "proto3";
+
+option csharp_namespace = "Helpdesk.Assignments.Grpc";
+package helpdesk.assignments;
+
+import "google/protobuf/timestamp.proto";
+
+// Technicians, routing rules, and the assignments produced by consuming Ticket.Created.
+// Note there is no "AssignTicket" rpc: assignment is driven by the event, not by a caller.
+service AssignmentGrpc {
+  rpc GetTechnician (TechnicianRequest) returns (TechnicianResponse);
+  rpc ListTechnicians (ListTechniciansRequest) returns (TechnicianListResponse);
+  // Admin-only - the Gateway calls these when provisioning/editing a Technician-role User,
+  // never directly from a client. See Gateway's UserService orchestration.
+  rpc CreateTechnician (CreateTechnicianRequest) returns (TechnicianResponse);
+  rpc UpdateTechnician (UpdateTechnicianRequest) returns (TechnicianResponse);
+  rpc ListRoutingRules (ListRoutingRulesRequest) returns (RoutingRuleListResponse);
+  // Admin-only, same reasoning as the Technician write rpcs above.
+  rpc CreateRoutingRule (CreateRoutingRuleRequest) returns (RoutingRuleResponse);
+  rpc UpdateRoutingRule (UpdateRoutingRuleRequest) returns (RoutingRuleResponse);
+  rpc GetAssignmentForTicket (TicketAssignmentRequest) returns (AssignmentResponse);
+  rpc ListAssignments (ListAssignmentsRequest) returns (AssignmentListResponse);
+  // Admin visibility into tickets nothing had capacity for at every level up to Critical -
+  // see Assignment.Domain.Routing.LevelRoutingMatcher and AssignmentBacklogEntry.
+  rpc ListBacklog (ListBacklogRequest) returns (BacklogListResponse);
+}
+
+// One (category, level) pairing a technician holds - e.g. "Hardware" at "High". A technician
+// can hold several; LevelRoutingMatcher escalates through these, not Team.
+message TechnicianCategoryLevelMessage {
+  string category = 1;
+  string level = 2;     // Low | Normal | High | Critical
+}
+
+message CreateTechnicianRequest {
+  string full_name = 1;
+  string email = 2;
+  string team = 3;
+  repeated string skills = 4;
+  int32 max_concurrent = 5;
+  repeated TechnicianCategoryLevelMessage category_levels = 6;
+  // The linked User's Client, resolved by the Gateway - never client-supplied. Empty = no Client.
+  string client_id = 7;
+}
+
+message UpdateTechnicianRequest {
+  string id = 1;
+  string full_name = 2;
+  string email = 3;
+  string team = 4;
+  repeated string skills = 5;
+  int32 max_concurrent = 6;
+  bool is_available = 7;
+  repeated TechnicianCategoryLevelMessage category_levels = 8;
+  // Same rule as CreateTechnicianRequest.client_id - kept in sync with the linked User's current Client.
+  string client_id = 9;
+}
+
+message TechnicianRequest {
+  string id = 1;
+}
+
+message ListTechniciansRequest {
+  string team = 1;               // empty = any
+  bool only_with_capacity = 2;
+}
+
+message ListRoutingRulesRequest {
+  bool only_active = 1;
+}
+
+message CreateRoutingRuleRequest {
+  string name = 1;
+  string category = 2;      // empty = any category
+  string min_priority = 3;
+  string team = 4;
+  int32 rank = 5;
+  // Same rule as CreateTechnicianRequest.client_id - resolved by the Gateway, never
+  // client-supplied except for BaseRole. Empty = visible to every Client.
+  string client_id = 6;
+}
+
+message UpdateRoutingRuleRequest {
+  string id = 1;
+  string name = 2;
+  string category = 3;      // empty = any category
+  string min_priority = 4;
+  string team = 5;
+  int32 rank = 6;
+  bool is_active = 7;
+  string client_id = 8;
+}
+
+message TicketAssignmentRequest {
+  string ticket_id = 1;
+}
+
+message ListAssignmentsRequest {
+  string technician_id = 1;      // empty = any
+  int32 page = 2;
+  int32 page_size = 3;
+  // Filters to assignments whose Technician belongs to this Client - applied before paging,
+  // same reasoning as ListTechniciansRequest not being post-filtered for a real page size.
+  string client_id = 4;          // empty = any
+}
+
+message TechnicianResponse {
+  string id = 1;
+  string full_name = 2;
+  string email = 3;
+  string team = 4;
+  repeated string skills = 5;
+  int32 max_concurrent = 6;
+  int32 active_assignments = 7;
+  bool is_available = 8;
+  bool has_capacity = 9;
+  google.protobuf.Timestamp created_at_utc = 10;
+  repeated TechnicianCategoryLevelMessage category_levels = 11;
+  string client_id = 12;
+}
+
+message TechnicianListResponse {
+  repeated TechnicianResponse technicians = 1;
+  int32 total = 2;
+}
+
+message RoutingRuleResponse {
+  string id = 1;
+  string name = 2;
+  string category = 3;           // empty = any category
+  string min_priority = 4;
+  string team = 5;
+  int32 rank = 6;
+  bool is_active = 7;
+  string client_id = 8;
+}
+
+message RoutingRuleListResponse {
+  repeated RoutingRuleResponse rules = 1;
+  int32 total = 2;
+}
+
+message AssignmentResponse {
+  string id = 1;
+  string ticket_id = 2;
+  string ticket_reference = 3;
+  string technician_id = 4;
+  string technician_name = 5;
+  string team = 6;
+  string routing_rule_id = 7;
+  string routing_rule_name = 8;
+  string category = 9;
+  string priority = 10;
+  string explanation = 11;
+  google.protobuf.Timestamp assigned_at_utc = 12;
+  string client_id = 13;         // the assigned Technician's Client, empty = none
+  // Only meaningful on GetAssignmentForTicket's response: false means the ticket has no
+  // assignment yet - still queued in the backlog, or the TicketCreated consumer hasn't run
+  // yet. An expected, common state, not an error. ListAssignments' items are always real
+  // assignments, so this is implicitly true there and never checked.
+  bool found = 14;
+}
+
+message AssignmentListResponse {
+  repeated AssignmentResponse assignments = 1;
+  int32 total = 2;
+}
+
+message ListBacklogRequest {
+  string category = 1;      // empty = any
+}
+
+message BacklogEntryResponse {
+  string id = 1;
+  string ticket_id = 2;
+  string ticket_reference = 3;
+  string category = 4;
+  string priority = 5;
+  string starting_level = 6;
+  string comment_text = 7;
+  google.protobuf.Timestamp queued_at_utc = 8;
+}
+
+message BacklogListResponse {
+  repeated BacklogEntryResponse entries = 1;
+  int32 total = 2;
+}

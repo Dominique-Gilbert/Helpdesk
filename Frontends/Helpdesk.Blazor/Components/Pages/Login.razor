@@ -1,0 +1,101 @@
+@page "/login"
+@layout EmptyLayout
+@using System.Security.Claims
+@using Microsoft.AspNetCore.Authentication
+@using Microsoft.AspNetCore.Authentication.Cookies
+@inject UserRepo Users
+@inject NavigationManager Navigation
+
+<PageTitle>Login</PageTitle>
+
+<MudContainer MaxWidth="MaxWidth.Small" Class="d-flex justify-center" Style="min-height:100vh; align-items:center;">
+    <MudPaper Class="pa-8" Width="380px" Elevation="4">
+        <MudStack AlignItems="AlignItems.Center" Class="mb-6" Spacing="2">
+            <MudImage Src="images/logo.png" Alt="IT Helpdesk & Assets" Width="64" Height="64" />
+            <MudText Typo="Typo.h5">IT Helpdesk &amp; Assets</MudText>
+            <MudText Typo="Typo.body2" Color="Color.Secondary">Login to continue</MudText>
+        </MudStack>
+
+        @* MudBlazor's input components need an interactive circuit to postback - this form
+           must stay static SSR (HttpContext.SignInAsync only works during a real request), so
+           the two bound fields are plain Blazor InputText, styled to match. The button's busy
+           state on submit is plain JS for the same reason - there's no circuit here to drive it. *@
+        <EditForm Model="model" method="post" OnValidSubmit="LoginAsync" FormName="login" id="login-form">
+            <MudStack Spacing="4">
+                @if (error is not null)
+                {
+                    <MudAlert Severity="Severity.Error" Dense="true">@error</MudAlert>
+                }
+                <div class="login-field">
+                    <label for="username">Username</label>
+                    <InputText id="username" @bind-Value="model.username" class="login-input" autocomplete="username" />
+                </div>
+                <div class="login-field">
+                    <label for="password">Password</label>
+                    <InputText id="password" type="password" @bind-Value="model.password" class="login-input" autocomplete="current-password" />
+                </div>
+                <MudButton id="login-submit-btn" ButtonType="ButtonType.Submit" Variant="Variant.Filled" Color="Color.Primary" FullWidth="true" Size="Size.Large">
+                    Login
+                </MudButton>
+            </MudStack>
+        </EditForm>
+
+        <MudText Typo="Typo.caption" Color="Color.Secondary" Class="mt-6 d-block">
+            Accounts are created by an administrator - there is no self-service sign up.
+        </MudText>
+    </MudPaper>
+</MudContainer>
+
+<script>
+    document.getElementById('login-form')?.addEventListener('submit', function () {
+        var btn = document.getElementById('login-submit-btn');
+        if (!btn) return;
+        btn.disabled = true;
+        btn.classList.add('button-busy');
+        var label = btn.querySelector('.mud-button-label') ?? btn;
+        label.textContent = 'Authenticating...';
+    });
+</script>
+
+@code {
+    [SupplyParameterFromForm]
+    private LoginRequestDto model { get; set; } = new();
+
+    [CascadingParameter]
+    private HttpContext HttpContext { get; set; } = default!;
+
+    private string? error;
+
+    private async Task LoginAsync()
+    {
+        error = null;
+
+        var result = await Users.LoginAsync(model);
+        if (result is null)
+        {
+            error = "Invalid username or password.";
+            return;
+        }
+
+        var claims = new List<Claim>
+        {
+            new(ClaimTypes.NameIdentifier, result.userId.ToString()),
+            new(ClaimTypes.Name, result.fullName),
+            new(ClaimTypes.Upn, model.username),
+            new(ClaimTypes.Role, result.role),
+            new(CurrentUserTokenAccessor.TokenClaimType, result.token)
+        };
+
+        if (result.technicianId is { } technicianId)
+        {
+            claims.Add(new Claim(CurrentUserTokenAccessor.TechnicianIdClaimType, technicianId.ToString()));
+        }
+
+        var identity = new ClaimsIdentity(claims, CookieAuthenticationDefaults.AuthenticationScheme);
+        await HttpContext.SignInAsync(CookieAuthenticationDefaults.AuthenticationScheme, new ClaimsPrincipal(identity));
+
+        // Technicians and Support only have Tickets to look at - land them there directly
+        // instead of on the Overview page they're not allowed to see.
+        Navigation.NavigateTo(result.role is "Technician" or "Support" ? "/tickets" : "/");
+    }
+}

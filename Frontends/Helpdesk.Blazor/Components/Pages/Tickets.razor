@@ -1,0 +1,248 @@
+@page "/tickets"
+@implements IDisposable
+@using Helpdesk.Blazor.Components.Subcomponents
+@using Helpdesk.Blazor.Services
+@inject TicketRepo TicketsRepo
+@inject SlaRepo Slas
+@inject BaseRoleViewContext ViewContext
+
+<HelpdeskBreadcrumbs BreadcrumbItems="breadcrumbs" />
+
+<MudStack Row="true" AlignItems="AlignItems.Center" Justify="Justify.SpaceBetween" Class="mb-4">
+    <div>
+        <MudText Typo="Typo.h4" GutterBottom="true">@PageLabel</MudText>
+        <MudText Typo="Typo.body1" Color="Color.Secondary">
+            @(isTechnician
+                ? "Tickets assigned to you. Add a comment or close one from its Details drawer."
+                : isSupport
+                    ? "Tickets you've raised. Create a new one, or add a comment from its Details drawer."
+                    : "Create a ticket, then select it to watch two services react to the same event.")
+        </MudText>
+    </div>
+    @* Technicians work tickets that are routed to them - they don't raise new ones themselves. *@
+    @if (!isTechnician)
+    {
+        <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="() => createDrawerOpen = true">
+            New ticket
+        </MudButton>
+    }
+</MudStack>
+
+@if (error is not null)
+{
+    <MudAlert Severity="Severity.Error" Dense="true" Class="mb-4">@error</MudAlert>
+}
+
+@if (page is null)
+{
+    <MudText Color="Color.Secondary">Loading&hellip;</MudText>
+}
+else if (page.items.Count == 0)
+{
+    <MudText Color="Color.Secondary">No tickets yet.</MudText>
+}
+else
+{
+    <TicketsDataGrid Items="page.items" SlaClocksByTicketId="slaClocksByTicketId" SelectedId="selectedId" OverviewBusy="overviewBusy" OnOverview="SelectAsync" OnDetails="OpenDrawerAsync" />
+}
+
+<TicketActionsDrawer Ticket="drawerTicket" @bind-Open="drawerOpen" OnChanged="OnDrawerChangedAsync" />
+
+<CreateTicketDrawer @bind-Open="createDrawerOpen" OnCreated="OnCreatedAsync" />
+
+@if (overview is not null)
+{
+    <MudText Typo="Typo.h5" Class="mt-6 mb-2">@overview.ticket.reference &mdash; downstream state</MudText>
+    <MudPaper Class="pa-4">
+        <MudText Typo="Typo.body2" Class="mb-2">
+            <strong>Assignment.API:</strong>
+            @if (overview.assignment is null)
+            {
+                <MudChip T="string" Size="Size.Small" Color="Color.Warning">not assigned yet</MudChip>
+            }
+            else
+            {
+                <span>@overview.assignment.technicianName (@overview.assignment.team)</span>
+                <br />
+                <MudText Typo="Typo.caption" Color="Color.Secondary">@overview.assignment.explanation</MudText>
+            }
+        </MudText>
+        <MudText Typo="Typo.body2" Class="mb-3">
+            <strong>SLA.API:</strong>
+            @if (overview.slaClock is null)
+            {
+                <MudChip T="string" Size="Size.Small" Color="Color.Warning">no clock yet</MudChip>
+            }
+            else
+            {
+                <span>@overview.slaClock.status, due @overview.slaClock.dueAtUtc.ToString("u")</span>
+                <br />
+                <MudText Typo="Typo.caption" Color="Color.Secondary">@FormatRemaining(overview.slaClock.remainingSeconds)</MudText>
+            }
+        </MudText>
+        <MudButton Variant="Variant.Outlined" Size="Size.Small" Disabled="@refreshBusy" OnClick="RefreshClickAsync">
+            @(refreshBusy ? "Refreshing..." : "Refresh")
+        </MudButton>
+        <MudText Typo="Typo.caption" Color="Color.Secondary" Class="ml-2">
+            both panels fill in within a second or two of creation, from two separate services.
+        </MudText>
+    </MudPaper>
+}
+
+@code {
+    private DtoTicketPage? page;
+    private Dictionary<Guid, DtoSlaClock> slaClocksByTicketId = [];
+    private DtoTicketOverview? overview;
+    private Guid? selectedId;
+    private bool overviewBusy;
+    private bool refreshBusy;
+    private string? error;
+
+    private DtoTicket? drawerTicket;
+    private bool drawerOpen;
+
+    private bool createDrawerOpen;
+
+    private bool isTechnician;
+    private bool isSupport;
+
+    [CascadingParameter]
+    private Task<AuthenticationState>? AuthenticationStateTask { get; set; }
+
+    // "My Tickets" for Technician/Support, "Tickets" for Admin - same label the heading already
+    // used. Cross-links to Completed Tickets exactly like Management's three-way split, except
+    // Support never gets that second pill - see TicketBreadcrumbs and AdminOrTechnicianOnly.
+    private string PageLabel => (isTechnician || isSupport) ? "My Tickets" : "Tickets";
+    private List<BreadcrumbItem> breadcrumbs => TicketBreadcrumbs.For("/tickets", PageLabel, includeCompleted: !isSupport);
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (AuthenticationStateTask is not null)
+        {
+            var state = await AuthenticationStateTask;
+            isTechnician = state.User.IsInRole("Technician");
+            isSupport = state.User.IsInRole("Support");
+        }
+
+        // BaseRole's profile-menu switcher - reload this grid whenever it changes Client.
+        ViewContext.OnChange += HandleViewChanged;
+
+        await ReloadAsync();
+    }
+
+    private async Task ReloadAsync()
+    {
+        try
+        {
+            // The gateway's default list already excludes Completed tickets - those live on
+            // the Completed Tickets page instead, once their 24h close grace period has passed.
+            // "My Tickets" scoping for Technician/Support happens server-side now (the Gateway's
+            // TicketService knows the caller's role/identity from their own JWT) - what comes
+            // back here is already exactly what this caller is allowed to see. clientId only
+            // ever does anything for BaseRole (see TicketService.ListAsync's ClientFilter rule).
+            page = await TicketsRepo.ListAsync(clientId: ViewContext.SelectedClientId);
+
+            // One bulk fetch for the whole page rather than one gRPC round trip per row - the
+            // SLA chip's fade needs each ticket's live clock, but not a call-per-ticket to get it.
+            var clocks = await Slas.ListAsync(clientId: ViewContext.SelectedClientId);
+            slaClocksByTicketId = clocks.ToDictionary(c => c.ticketId);
+        }
+        catch (Exception ex) when (ex is not NavigationException)
+        {
+            // NavigationException is how UnauthorizedHandler signals a forced /logout redirect
+            // on a 401 - it must propagate to the Blazor pipeline, not get swallowed as an error.
+            error = $"Could not reach the gateway: {ex.Message}";
+        }
+    }
+
+    // InvokeAsync alone marshals onto the renderer's sync context but does not itself trigger a
+    // re-render - that's only automatic for the component's own lifecycle/UI-event callbacks, not
+    // an external event subscription like this one. Same reasoning as MainLayout's own
+    // HandleThemeChanged, just with an actual reload to await first.
+    private void HandleViewChanged() => InvokeAsync(async () =>
+    {
+        await ReloadAsync();
+        StateHasChanged();
+    });
+
+    public void Dispose() => ViewContext.OnChange -= HandleViewChanged;
+
+    private async Task OnCreatedAsync(Guid id)
+    {
+        await ReloadAsync();
+        await SelectAsync(id);
+    }
+
+    private async Task SelectAsync(Guid id)
+    {
+        selectedId = id;
+        overviewBusy = true;
+        try
+        {
+            await RefreshOverviewAsync();
+        }
+        catch (Exception ex) when (ex is not NavigationException)
+        {
+            // Same reasoning as ReloadAsync's own catch - a transient backend hiccup here
+            // (e.g. Assignment.API/SLA.API briefly unavailable) should surface as an error
+            // banner, not take down the whole circuit and force a hard page reload.
+            error = $"Could not load the overview: {ex.Message}";
+        }
+        finally
+        {
+            overviewBusy = false;
+        }
+    }
+
+    private async Task RefreshClickAsync()
+    {
+        refreshBusy = true;
+        try
+        {
+            await RefreshOverviewAsync();
+        }
+        catch (Exception ex) when (ex is not NavigationException)
+        {
+            error = $"Could not refresh the overview: {ex.Message}";
+        }
+        finally
+        {
+            refreshBusy = false;
+        }
+    }
+
+    private async Task RefreshOverviewAsync()
+    {
+        if (selectedId is null) return;
+        overview = await TicketsRepo.GetOverviewAsync(selectedId.Value);
+    }
+
+    private static string FormatRemaining(long seconds) =>
+        seconds >= 0
+            ? $"{FormatSpan(TimeSpan.FromSeconds(seconds))} remaining"
+            : $"overdue by {FormatSpan(TimeSpan.FromSeconds(-seconds))}";
+
+    // TimeSpan's "hh" custom format specifier is hours-within-the-current-day (00-23), not
+    // total hours - past 24h it silently drops the day count instead of showing it, so this
+    // uses TotalHours (uncapped) rather than the "d\.hh\:mm\:ss" format.
+    private static string FormatSpan(TimeSpan span) =>
+        $"{(int)span.TotalHours:00}:{span.Minutes:00}:{span.Seconds:00}";
+
+    // The list endpoint doesn't include comments (kept light for the grid) - the drawer needs
+    // the full ticket, so it's fetched fresh rather than reused from the already-loaded page.
+    private async Task OpenDrawerAsync(Guid id)
+    {
+        drawerTicket = await TicketsRepo.GetAsync(id);
+        drawerOpen = true;
+    }
+
+    private async Task OnDrawerChangedAsync()
+    {
+        if (drawerTicket is not null)
+        {
+            drawerTicket = await TicketsRepo.GetAsync(drawerTicket.id);
+        }
+
+        await ReloadAsync();
+    }
+}

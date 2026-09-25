@@ -1,0 +1,195 @@
+@using Helpdesk.Blazor.Repositories
+@using Helpdesk.Gateway.Dto
+@inject AssignmentRepo Assignments
+@inject ClientRepo ClientsRepo
+
+@* Same shell/shape as UserEditDrawer - create when Rule is null, edit otherwise. *@
+<DetailDrawer Title="@(Rule is null ? "New routing rule" : $"Edit {Rule.name}")" Open="Open" OpenChanged="OpenChanged">
+    <ChildContent>
+        <MudStack Spacing="3">
+            @if (error is not null)
+            {
+                <MudAlert Severity="Severity.Error" Dense="true">@error</MudAlert>
+            }
+
+            <MudTextField @bind-Value="name" Label="Name" Placeholder="Hardware faults" FullWidth="true"
+                          MaxLength="128" Immediate="true" Validation="@((Func<string, IEnumerable<string>>)ValidateName)" />
+
+            @* BaseRole-exclusive, same rule as UserEditDrawer's own Client field - an Admin's
+               rule always belongs to their own Client, decided server-side, so there's nothing
+               for them to pick here. *@
+            @if (IsBaseRoleViewer)
+            {
+                <MudSelect T="Guid?" @bind-Value="clientId" Label="Client" FullWidth="true"
+                           HelperText="None applies the rule to every Client.">
+                    <MudSelectItem T="Guid?" Value="@((Guid?)null)">None (every Client)</MudSelectItem>
+                    @foreach (var client in clients)
+                    {
+                        <MudSelectItem T="Guid?" Value="@client.id">@client.company</MudSelectItem>
+                    }
+                </MudSelect>
+            }
+
+            <MudSelect @bind-Value="category" Label="Category" FullWidth="true">
+                <MudSelectItem Value="@("")">any</MudSelectItem>
+                @foreach (var value in categories)
+                {
+                    <MudSelectItem Value="@value">@value</MudSelectItem>
+                }
+            </MudSelect>
+
+            <MudSelect @bind-Value="minPriority" Label="Min priority" FullWidth="true">
+                @foreach (var value in priorities)
+                {
+                    <MudSelectItem Value="@value">@value</MudSelectItem>
+                }
+            </MudSelect>
+
+            <MudSelect @bind-Value="team" Label="Team" FullWidth="true">
+                @foreach (var value in teams)
+                {
+                    <MudSelectItem Value="@value">@value</MudSelectItem>
+                }
+            </MudSelect>
+
+            <MudNumericField @bind-Value="rank" Label="Rank" Min="1" HelperText="Lower rank is evaluated first." FullWidth="true" />
+
+            @if (Rule is not null)
+            {
+                <MudSwitch @bind-Value="isActive" Color="Color.Primary" Label="Active" />
+            }
+        </MudStack>
+    </ChildContent>
+    <FooterContent>
+        <MudButton Variant="Variant.Filled" Color="Color.Primary" FullWidth="true" Disabled="@busy" OnClick="SaveAsync">
+            @(busy ? "Saving..." : "Save")
+        </MudButton>
+    </FooterContent>
+</DetailDrawer>
+
+@code {
+    private static readonly string[] categories = ["General", "Hardware", "Software", "Network", "Access", "Facilities"];
+    private static readonly string[] priorities = ["Low", "Normal", "High", "Critical"];
+    private static readonly string[] teams = ["Hardware", "Software", "Network", "Escalations", "Service Desk"];
+    private static readonly CreateRoutingRuleValidator createValidator = new();
+    private static readonly UpdateRoutingRuleValidator updateValidator = new();
+
+    private IEnumerable<string> ValidateName(string value) =>
+        createValidator.Field(v => new CreateRoutingRuleDto { name = v }, nameof(CreateRoutingRuleDto.name))(value);
+
+    [Parameter]
+    public DtoRoutingRule? Rule { get; set; }
+
+    /// <summary>Whether the person using this drawer is BaseRole - gates the Client field, and
+    /// whether ClientsRepo.ListAsync (BaseRole-exclusive) is even safe to call.</summary>
+    [Parameter]
+    public bool IsBaseRoleViewer { get; set; }
+
+    [Parameter]
+    public bool Open { get; set; }
+
+    [Parameter]
+    public EventCallback<bool> OpenChanged { get; set; }
+
+    [Parameter]
+    public EventCallback OnSaved { get; set; }
+
+    private string name = string.Empty;
+    private string category = string.Empty;
+    private string minPriority = "Low";
+    private string team = teams[0];
+    private int rank = 50;
+    private bool isActive = true;
+
+    private List<DtoClient> clients = [];
+    private Guid? clientId;
+
+    private bool busy;
+    private string? error;
+    private bool wasOpen;
+
+    // Reset only on the closed -> open transition - see UserEditDrawer for why.
+    protected override async Task OnParametersSetAsync()
+    {
+        if (Open && !wasOpen)
+        {
+            error = null;
+            name = Rule?.name ?? string.Empty;
+            category = Rule?.category ?? string.Empty;
+            minPriority = Rule?.minPriority ?? "Low";
+            team = string.IsNullOrWhiteSpace(Rule?.team) ? teams[0] : Rule.team;
+            rank = Rule?.rank ?? 50;
+            isActive = Rule?.isActive ?? true;
+            clientId = Rule?.clientId;
+
+            if (IsBaseRoleViewer && clients.Count == 0)
+            {
+                clients = (await ClientsRepo.ListAsync(pageSize: 200)).items;
+            }
+        }
+
+        wasOpen = Open;
+    }
+
+    private async Task SaveAsync()
+    {
+        error = null;
+
+        CreateRoutingRuleDto? createDto = null;
+        UpdateRoutingRuleDto? updateDto = null;
+
+        if (Rule is null)
+        {
+            createDto = new CreateRoutingRuleDto
+            {
+                name = name.Trim(),
+                category = string.IsNullOrWhiteSpace(category) ? null : category,
+                minPriority = minPriority,
+                team = team,
+                rank = rank,
+                clientId = clientId
+            };
+            error = createValidator.ValidateAndGetError(createDto);
+        }
+        else
+        {
+            updateDto = new UpdateRoutingRuleDto
+            {
+                name = name.Trim(),
+                category = string.IsNullOrWhiteSpace(category) ? null : category,
+                minPriority = minPriority,
+                team = team,
+                rank = rank,
+                isActive = isActive,
+                clientId = clientId
+            };
+            error = updateValidator.ValidateAndGetError(updateDto);
+        }
+
+        if (error is not null) return;
+
+        busy = true;
+        try
+        {
+            if (createDto is not null)
+            {
+                await Assignments.CreateRoutingRuleAsync(createDto);
+            }
+            else
+            {
+                await Assignments.UpdateRoutingRuleAsync(Rule!.id, updateDto!);
+            }
+
+            await OnSaved.InvokeAsync();
+            await OpenChanged.InvokeAsync(false);
+        }
+        catch (Exception ex) when (ex is not Microsoft.AspNetCore.Components.NavigationException)
+        {
+            error = ex.Message;
+        }
+        finally
+        {
+            busy = false;
+        }
+    }
+}

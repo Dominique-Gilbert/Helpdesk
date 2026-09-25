@@ -1,0 +1,25 @@
+@* The Supercard CustomMudBreadcrumbs pattern: a thin MudBreadcrumbs wrapper with its separator
+   hidden, so each item renders as a standalone pill (see .helpdesk-breadcrumbs in app.css) -
+   the pills themselves, not a separator glyph, are what shows the trail. *@
+<MudBreadcrumbs Items="BreadcrumbItems" Class="@Class" Style="@Style">
+    <SeparatorTemplate>
+        <MudItem Class="@SeparatorIcon" Style="display:none;"></MudItem>
+    </SeparatorTemplate>
+</MudBreadcrumbs>
+
+@code {
+    [Parameter]
+    public List<BreadcrumbItem> BreadcrumbItems { get; set; } = [];
+
+    [Parameter]
+    public string Class { get; set; } = "helpdesk-breadcrumbs";
+
+    [Parameter]
+    public string Style { get; set; } = "";
+
+    [Parameter]
+    public string SeparatorIcon { get; set; } = "separator-icon";
+
+    [Parameter]
+    public Size SeparatorIconSize { get; set; } = Size.Small;
+}

@@ -1,0 +1,157 @@
+@page "/profile"
+@using Helpdesk.Blazor.Repositories
+@using Helpdesk.Gateway.Dto
+@inject UserRepo Users
+@inject ISnackbar Snackbar
+
+<MudText Typo="Typo.h4" GutterBottom="true">My Profile</MudText>
+
+@if (profile is null)
+{
+    <MudText Color="Color.Secondary">Loading&hellip;</MudText>
+}
+else
+{
+    <MudPaper Class="pa-4" Style="max-width:480px">
+        @* Same reason as SupercardServices' own profile page: change-password lives on its own
+           tab rather than inline with the rest of the form - a current-password field sitting
+           next to unrelated details invites someone to fill it in "just in case" every time
+           they only meant to update their name. *@
+        <MudTabs Class="helpdesk-tabs" Rounded="true">
+            <MudTabPanel Text="Details">
+                <MudStack Spacing="3" Class="pt-3">
+                    @if (detailsError is not null)
+                    {
+                        <MudAlert Severity="Severity.Error" Dense="true">@detailsError</MudAlert>
+                    }
+                    <MudTextField Label="Username" Value="@profile.username" ReadOnly="true" Variant="Variant.Outlined" />
+                    <MudTextField Label="Role" Value="@profile.role" ReadOnly="true" Variant="Variant.Outlined" />
+                    <MudTextField @bind-Value="fullName" Label="Full name" Variant="Variant.Outlined" />
+                    <MudTextField @bind-Value="email" Label="Email" Variant="Variant.Outlined" />
+                    <MudButton Variant="Variant.Filled" Color="Color.Primary" Disabled="@detailsBusy" OnClick="SaveDetailsAsync">
+                        @(detailsBusy ? "Saving..." : "Save")
+                    </MudButton>
+                </MudStack>
+            </MudTabPanel>
+            <MudTabPanel Text="Change Password">
+                <MudStack Spacing="3" Class="pt-3">
+                    @if (passwordError is not null)
+                    {
+                        <MudAlert Severity="Severity.Error" Dense="true">@passwordError</MudAlert>
+                    }
+                    <MudTextField @bind-Value="currentPassword" Label="Current password" InputType="InputType.Password" Variant="Variant.Outlined" />
+                    <MudTextField @bind-Value="newPassword" Label="New password" InputType="InputType.Password" HelperText="At least 8 characters." Variant="Variant.Outlined" />
+                    <MudTextField @bind-Value="confirmPassword" Label="Confirm new password" InputType="InputType.Password" Variant="Variant.Outlined" />
+                    <MudButton Variant="Variant.Filled" Color="Color.Primary" Disabled="@(passwordBusy || !CanSubmitPassword)" OnClick="ChangePasswordAsync">
+                        @(passwordBusy ? "Updating..." : "Update password")
+                    </MudButton>
+                </MudStack>
+            </MudTabPanel>
+        </MudTabs>
+    </MudPaper>
+}
+
+@code {
+    private DtoUserSummary? profile;
+    private string fullName = string.Empty;
+    private string email = string.Empty;
+    private bool detailsBusy;
+    private string? detailsError;
+
+    private string currentPassword = string.Empty;
+    private string newPassword = string.Empty;
+    private string confirmPassword = string.Empty;
+    private bool passwordBusy;
+    private string? passwordError;
+
+    private bool CanSubmitPassword =>
+        !string.IsNullOrWhiteSpace(currentPassword) &&
+        !string.IsNullOrWhiteSpace(newPassword) &&
+        newPassword == confirmPassword;
+
+    protected override async Task OnInitializedAsync()
+    {
+        profile = await Users.GetMeAsync();
+        if (profile is not null)
+        {
+            fullName = profile.fullName;
+            email = profile.email ?? string.Empty;
+        }
+    }
+
+    private async Task SaveDetailsAsync()
+    {
+        detailsError = null;
+
+        if (string.IsNullOrWhiteSpace(fullName))
+        {
+            detailsError = "Full name is required.";
+            return;
+        }
+
+        detailsBusy = true;
+        try
+        {
+            profile = await Users.UpdateMeAsync(new UpdateMyProfileDto
+            {
+                fullName = fullName.Trim(),
+                email = string.IsNullOrWhiteSpace(email) ? null : email.Trim()
+            });
+            Snackbar.Add("Profile updated.", Severity.Success);
+        }
+        catch (Exception ex) when (ex is not Microsoft.AspNetCore.Components.NavigationException)
+        {
+            detailsError = ex.Message;
+        }
+        finally
+        {
+            detailsBusy = false;
+        }
+    }
+
+    private async Task ChangePasswordAsync()
+    {
+        passwordError = null;
+
+        if (newPassword != confirmPassword)
+        {
+            passwordError = "New password and confirmation do not match.";
+            return;
+        }
+        if (newPassword.Length < 8)
+        {
+            passwordError = "New password must be at least 8 characters.";
+            return;
+        }
+
+        passwordBusy = true;
+        try
+        {
+            var (success, error) = await Users.ChangePasswordAsync(new ChangePasswordDto
+            {
+                currentPassword = currentPassword,
+                newPassword = newPassword
+            });
+
+            if (success)
+            {
+                currentPassword = string.Empty;
+                newPassword = string.Empty;
+                confirmPassword = string.Empty;
+                Snackbar.Add("Password updated.", Severity.Success);
+            }
+            else
+            {
+                passwordError = error;
+            }
+        }
+        catch (Exception ex) when (ex is not Microsoft.AspNetCore.Components.NavigationException)
+        {
+            passwordError = ex.Message;
+        }
+        finally
+        {
+            passwordBusy = false;
+        }
+    }
+}

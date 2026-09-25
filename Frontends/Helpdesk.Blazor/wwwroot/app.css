@@ -1,0 +1,283 @@
+/* MudBlazor's theme (see Theming/HelpdeskTheme.cs) covers color, typography, and every
+   component's own chrome. What's left here is layout MudBlazor has no opinion on. */
+
+html, body {
+    height: 100%;
+    overflow-x: hidden;
+}
+
+/* MainLayout.razor's MudAppBar is fixed-top (MudBlazor's default) but MudMainContent's own
+   "pa-4" utility class only gives it 16px of top padding - nowhere near the bar's 64px height
+   (--mud-appbar-height, which MudBlazor's theme already exposes as this variable but never
+   applies for you). Every page's first element was rendering underneath the bar, invisible -
+   a pre-existing bug across the whole app that the new breadcrumbs just made obvious, since a
+   red pill is a lot easier to notice missing than the top slice of a heading's text. */
+.mud-main-content.pa-4 {
+    padding-top: calc(var(--mud-appbar-height, 64px) + 16px) !important;
+}
+
+code {
+    background: rgba(0, 0, 0, 0.045);
+    padding: 0.1rem 0.35rem;
+    border-radius: 4px;
+    font-size: 0.85em;
+}
+
+/* Login.razor's two bound fields are plain Blazor InputText, not MudTextField - MudBlazor's
+   own input components require an interactive circuit to postback, and this form has to stay
+   static SSR for HttpContext.SignInAsync to work. Styled here to look the part regardless. */
+.login-field {
+    display: flex;
+    flex-direction: column;
+    gap: 0.3rem;
+    text-align: left;
+}
+
+.login-field label {
+    font-size: 0.78rem;
+    color: var(--mud-palette-text-secondary, #6e6e6e);
+}
+
+.login-input {
+    font: inherit;
+    padding: 0.55rem 0.75rem;
+    border: 1px solid rgba(0, 0, 0, 0.23);
+    border-radius: 4px;
+    background: transparent;
+    width: 100%;
+}
+
+.login-input:focus {
+    outline: none;
+    border-color: var(--mud-palette-primary, #cc0000);
+    border-width: 2px;
+    padding: 0.5rem 0.7rem;
+}
+
+/* MudText defaults to the theme's text-primary color, which is dark - the NavMenu's own
+   header sits on the drawer's (black) background, so it needs the drawer's text color instead. */
+.nav-menu-title {
+    color: var(--mud-palette-drawer-text);
+}
+
+/* Its own flex column, independent of whatever layout MudDrawer's content wrapper uses -
+   margin-top: auto on .nav-menu-footer reliably pins it to the bottom either way, unlike
+   MudSpacer, which only works if the ambient container happens to be a flex column too.
+   height: 100% collapses if any ancestor's own height doesn't resolve to a real value, so
+   this anchors to the viewport directly instead, minus the fixed AppBar it sits below. */
+.nav-menu-shell {
+    display: flex;
+    flex-direction: column;
+    width: 100%;
+    min-height: calc(100vh - var(--mud-appbar-height, 64px));
+    overflow-x: hidden;
+    box-sizing: border-box;
+}
+
+/* Without this, a flex item's own content (the wrapped title text) can force it wider than
+   its share of the row instead of wrapping within it, which is what was bleeding sideways. */
+.nav-menu-shell .mud-drawer-header {
+    min-width: 0;
+}
+
+.nav-menu-title {
+    min-width: 0;
+    overflow-wrap: break-word;
+}
+
+.nav-menu-footer {
+    margin-top: auto;
+}
+
+/* MudDivider defaults to a light-mode border color, which reads as a stark white line
+   against the drawer's black background - dial it back instead of a bespoke color. */
+.nav-menu-divider {
+    opacity: 0.2;
+}
+
+/* Applied by plain JS (Login.razor's submit handler) rather than MudBlazor's own Disabled
+   binding - that form is static SSR with no circuit to drive a Blazor-side loading state. */
+.button-busy,
+.button-busy:disabled {
+    opacity: 0.6 !important;
+    cursor: not-allowed !important;
+    pointer-events: none;
+}
+
+.helpdesk-table {
+    border-radius: 10px;
+    box-shadow: 0 0 15px rgba(0, 0, 0, 0.09);
+}
+
+.helpdesk-table .mud-table-header,
+.helpdesk-table .mud-table-head .mud-table-cell {
+    background-color: var(--mud-palette-background-gray, #f5f5f5) !important;
+    font-weight: bold !important;
+}
+
+.helpdesk-table .mud-table-row:hover,
+.helpdesk-table .mud-table-row:hover td {
+    /* --mud-palette-primary-hover is the same semi-transparent primary MudBlazor's own buttons
+       already hover with (see mud-button-root:hover) - previously hardcoded to a fixed red here,
+       so a white-labeled Client's hover stayed red no matter what PrimaryColor they picked. */
+    background-color: var(--mud-palette-primary-hover) !important;
+    color: var(--mud-palette-primary, #cc0000) !important;
+}
+
+.most-recent-card {
+    border-radius: 10px;
+    overflow: hidden;
+    box-shadow: 0 0 15px rgba(0, 0, 0, 0.09);
+}
+
+.most-recent-banner {
+    background: var(--mud-palette-primary, #cc0000);
+    color: #fff;
+    padding: 10px 16px;
+    font-weight: 600;
+}
+
+.most-recent-card .helpdesk-table {
+    border-radius: 0;
+    box-shadow: none;
+}
+
+/* HelpdeskBreadcrumbs.razor - SuperCard's CustomMudBreadcrumbs pill trail, recolored to
+   Helpdesk red: the current page's pill is solid red rather than SuperCard's darker gray, so
+   "you are here" reads at a glance instead of by a subtle shade difference. The separator is
+   hidden in the component itself (display:none), so there is no glyph between pills - the gap
+   from li.mud-breadcrumb-separator's padding is what reads as a trail. */
+.helpdesk-breadcrumbs {
+    padding-left: 0;
+    margin-bottom: 10px;
+}
+
+    .helpdesk-breadcrumbs li.mud-breadcrumb-separator {
+        padding: 0 6px !important;
+    }
+
+    .helpdesk-breadcrumbs li.mud-breadcrumb-item {
+        background: var(--mud-palette-background-gray, #f5f5f5) !important;
+        padding: 6px 12px !important;
+        border-radius: 10px !important;
+        font-size: 14px;
+    }
+
+        .helpdesk-breadcrumbs li.mud-breadcrumb-item a {
+            color: #4f4f50 !important;
+            font-weight: 600 !important;
+        }
+
+        .helpdesk-breadcrumbs li.mud-breadcrumb-item:hover {
+            background: #e0e1e4 !important;
+            cursor: pointer;
+        }
+
+        .helpdesk-breadcrumbs li.mud-breadcrumb-item.mud-disabled {
+            background: var(--mud-palette-primary, #cc0000) !important;
+        }
+
+            .helpdesk-breadcrumbs li.mud-breadcrumb-item.mud-disabled a,
+            .helpdesk-breadcrumbs li.mud-breadcrumb-item.mud-disabled p {
+                color: #fff !important;
+                font-weight: 600 !important;
+            }
+
+/* DetailDrawer.razor - base drawer shell modeled on SuperCard's Drawer.razor (a colored top
+   accent, a title bar, a scrollable body, a pinned footer), recolored to Helpdesk red.
+
+   MudDrawer always themes itself off --mud-palette-drawer-*, which HelpdeskTheme.cs sets to
+   black for the NavMenu - every MudDrawer instance inherits that unless overridden. This one
+   redefines those custom properties locally so only this drawer goes back to a normal white
+   surface with dark text, leaving the NavMenu's black drawer untouched. */
+.detail-drawer-root {
+    --mud-palette-drawer-background: #ffffff;
+    --mud-palette-drawer-text: rgba(0, 0, 0, 0.87);
+    --mud-palette-drawer-icon: rgba(0, 0, 0, 0.54);
+    background-color: #fff !important;
+    color: rgba(0, 0, 0, 0.87) !important;
+}
+
+.detail-drawer-shell {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+}
+
+.detail-drawer-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 16px;
+    border-top: 6px solid var(--mud-palette-primary, #cc0000);
+    border-bottom: 1px solid var(--mud-palette-divider, rgba(0, 0, 0, 0.08));
+}
+
+/* A flex column, not a single scrolling block - ticket-drawer-scroll (below) is the one
+   part that actually scrolls, so a long comment list can't push the "Add a comment" box
+   out of view. Drawers with no such split (e.g. UserEditDrawer) still just scroll normally,
+   since flex-direction:column with one auto-height child behaves the same as before. */
+.detail-drawer-body {
+    flex: 1 1 auto;
+    display: flex;
+    flex-direction: column;
+    overflow-y: auto;
+    padding: 16px;
+}
+
+.ticket-drawer-scroll {
+    flex: 1 1 auto;
+    min-height: 0; /* required for a flex child to actually shrink and scroll, not grow unbounded */
+    overflow-y: auto;
+}
+
+.ticket-drawer-input {
+    flex: 0 0 auto;
+    padding-top: 12px;
+}
+
+.detail-drawer-footer {
+    border-top: 1px solid var(--mud-palette-divider, rgba(0, 0, 0, 0.08));
+}
+
+/* The "Add a comment" box specifically - the same light-red shading used for table row
+   hovers elsewhere, with a black border at rest that switches to the theme red once focused.
+   Uses Variant.Text (a plain textarea, no fieldset chrome of its own) and draws the border
+   directly on the textarea itself with a real `border` property, rather than fighting
+   MudBlazor's Outlined variant's absolutely-positioned fieldset overlay for space - that
+   overlay depends on the input having a stable positioning context, which this drawer's
+   flex layout doesn't reliably give it. */
+.comment-textarea .mud-input-slot {
+    background-color: rgba(204, 0, 0, 0.06) !important;
+    border: 1px solid #000 !important;
+    border-radius: 4px !important;
+    padding: 8px 12px !important;
+    box-sizing: border-box !important;
+}
+
+.comment-textarea .mud-input-slot:focus {
+    border-color: var(--mud-palette-primary, #cc0000) !important;
+    border-width: 2px !important;
+    outline: none !important;
+}
+
+/* Shared MudTabs look (TicketActionsDrawer's Details/SLA, Profile's Details/Change Password) -
+   MudBlazor's Color parameter on MudTabs fills the entire tabbar background with that color
+   (.mud-tabs-tabbar-primary), not just the active tab, which reads as one solid red block with
+   barely-distinguishable white-on-red text rather than a tab strip. Left uncolored instead,
+   with only the active label and its underline picking up the theme red, and the default
+   all-caps tab text turned back to normal case. */
+.helpdesk-tabs .mud-tab {
+    text-transform: none;
+    font-weight: 500;
+    color: var(--mud-palette-text-secondary, #6e6e6e);
+}
+
+.helpdesk-tabs .mud-tab-active {
+    font-weight: 700;
+    color: var(--mud-palette-primary, #cc0000);
+}
+
+.helpdesk-tabs .mud-tab-slider {
+    background-color: var(--mud-palette-primary, #cc0000) !important;
+}

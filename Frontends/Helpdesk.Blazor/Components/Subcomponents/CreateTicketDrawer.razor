@@ -1,0 +1,123 @@
+@using Helpdesk.Blazor.Repositories
+@using Helpdesk.Gateway.Dto
+@inject TicketRepo TicketsRepo
+
+@* Same shell/shape as RoutingRuleDrawer - always a create, no edit mode. *@
+<DetailDrawer Title="New ticket" Open="Open" OpenChanged="OpenChanged">
+    <ChildContent>
+        <MudStack Spacing="3">
+            @if (error is not null)
+            {
+                <MudAlert Severity="Severity.Error" Dense="true">@error</MudAlert>
+            }
+
+            <MudTextField @bind-Value="title" Label="Title" Placeholder="Laptop will not boot" FullWidth="true"
+                          MaxLength="256" Immediate="true" Validation="@((Func<string, IEnumerable<string>>)ValidateTitle)" />
+
+            <MudSelect @bind-Value="category" Label="Category" FullWidth="true">
+                @foreach (var value in categories)
+                {
+                    <MudSelectItem Value="@value">@value</MudSelectItem>
+                }
+            </MudSelect>
+
+            <MudSelect @bind-Value="priority" Label="Priority" FullWidth="true">
+                @foreach (var value in priorities)
+                {
+                    <MudSelectItem Value="@value">@value</MudSelectItem>
+                }
+            </MudSelect>
+
+            <MudTextField @bind-Value="requestedBy" Label="Requested by" Placeholder="avery" FullWidth="true" MaxLength="128" />
+
+            <MudTextField @bind-Value="comment" Label="Comment (optional)"
+                          Placeholder="e.g. the keyboard on my laptop is unresponsive"
+                          HelperText="Routed technicians are matched against this text - mention the specific issue, not just the category."
+                          Lines="3" FullWidth="true" MaxLength="4000" />
+        </MudStack>
+    </ChildContent>
+    <FooterContent>
+        <MudButton Variant="Variant.Filled" Color="Color.Primary" FullWidth="true" Disabled="@busy" OnClick="CreateAsync">
+            @(busy ? "Creating..." : "Create ticket")
+        </MudButton>
+    </FooterContent>
+</DetailDrawer>
+
+@code {
+    private static readonly string[] categories = ["General", "Hardware", "Software", "Network", "Access", "Facilities"];
+    private static readonly string[] priorities = ["Low", "Normal", "High", "Critical"];
+    private static readonly CreateTicketValidator validator = new();
+
+    private IEnumerable<string> ValidateTitle(string value) =>
+        validator.Field(v => new CreateTicketDto { title = v }, nameof(CreateTicketDto.title))(value);
+
+    [Parameter]
+    public bool Open { get; set; }
+
+    [Parameter]
+    public EventCallback<bool> OpenChanged { get; set; }
+
+    /// <summary>Raised with the created ticket's id once it exists, so the parent page can select it.</summary>
+    [Parameter]
+    public EventCallback<Guid> OnCreated { get; set; }
+
+    private string title = string.Empty;
+    private string category = categories[0];
+    private string priority = "Normal";
+    private string requestedBy = string.Empty;
+    private string comment = string.Empty;
+
+    private bool busy;
+    private string? error;
+    private bool wasOpen;
+
+    // Reset only on the closed -> open transition - see UserEditDrawer for why.
+    protected override void OnParametersSet()
+    {
+        if (Open && !wasOpen)
+        {
+            error = null;
+            title = string.Empty;
+            category = categories[0];
+            priority = "Normal";
+            requestedBy = string.Empty;
+            comment = string.Empty;
+        }
+
+        wasOpen = Open;
+    }
+
+    private async Task CreateAsync()
+    {
+        error = null;
+
+        var dto = new CreateTicketDto
+        {
+            title = title,
+            category = category,
+            priority = priority,
+            requestedBy = requestedBy,
+            comment = comment
+        };
+
+        error = validator.ValidateAndGetError(dto);
+        if (error is not null) return;
+
+        busy = true;
+        try
+        {
+            var created = await TicketsRepo.CreateAsync(dto);
+
+            await OpenChanged.InvokeAsync(false);
+            if (created is not null) await OnCreated.InvokeAsync(created.id);
+        }
+        catch (Exception ex) when (ex is not Microsoft.AspNetCore.Components.NavigationException)
+        {
+            error = ex.Message;
+        }
+        finally
+        {
+            busy = false;
+        }
+    }
+}

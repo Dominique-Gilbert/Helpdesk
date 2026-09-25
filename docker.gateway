@@ -1,0 +1,18 @@
+# syntax=docker/dockerfile:1
+# Build stage - the whole repo is copied because the gRPC tooling resolves .proto files
+# across project boundaries by relative path.
+FROM mcr.microsoft.com/dotnet/sdk:9.0 AS build
+WORKDIR /src
+COPY . .
+RUN dotnet restore "Gateway/Helpdesk.Gateway.API/Helpdesk.Gateway.API.csproj"
+RUN dotnet publish "Gateway/Helpdesk.Gateway.API/Helpdesk.Gateway.API.csproj" -c Release -o /app/publish --no-restore /p:UseAppHost=false
+
+FROM mcr.microsoft.com/dotnet/aspnet:9.0 AS final
+# curl is here only so compose has something to run a healthcheck with.
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends curl \
+    && rm -rf /var/lib/apt/lists/*
+WORKDIR /app
+COPY --from=build /app/publish .
+EXPOSE 8080 8081
+ENTRYPOINT ["dotnet", "Helpdesk.Gateway.API.dll"]

@@ -1,0 +1,68 @@
+@page "/technicians/recent-assignments"
+@implements IDisposable
+@using Helpdesk.Blazor.Components.Subcomponents
+@using Helpdesk.Blazor.Services
+@inject AssignmentRepo Assignments
+@inject ClientRepo ClientsRepo
+@inject BaseRoleViewContext ViewContext
+
+<AdminOnly>
+    <HelpdeskBreadcrumbs BreadcrumbItems="breadcrumbs" />
+
+    <MudText Typo="Typo.h4" GutterBottom="true">Recent assignments</MudText>
+    <MudText Typo="Typo.body1" Color="Color.Secondary" Class="mb-4">
+        The latest Ticket.Created events Assignment.API has routed.
+        @if (isBaseRole && ViewContext.SelectedClientName is { } name)
+        {
+            <text> Showing @name only - switch back to "All clients" in the profile menu to see every company.</text>
+        }
+    </MudText>
+
+    @if (assignments is null)
+    {
+        <MudText Color="Color.Secondary">Loading&hellip;</MudText>
+    }
+    else
+    {
+        <AssignmentsDataGrid Items="assignments" ClientNames="@(isBaseRole ? clientNames : null)" />
+    }
+</AdminOnly>
+
+@code {
+    private readonly List<BreadcrumbItem> breadcrumbs = ManagementBreadcrumbs.For("/technicians/recent-assignments");
+    private List<DtoAssignment>? assignments;
+
+    private bool isBaseRole;
+    private Dictionary<Guid, string> clientNames = [];
+
+    [CascadingParameter]
+    private Task<AuthenticationState>? AuthenticationStateTask { get; set; }
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (AuthenticationStateTask is not null)
+        {
+            var state = await AuthenticationStateTask;
+            isBaseRole = state.User.IsInRole("BaseRole");
+        }
+
+        if (isBaseRole)
+        {
+            var clients = (await ClientsRepo.ListAsync(pageSize: 200)).items;
+            clientNames = clients.ToDictionary(c => c.id, c => c.company);
+            ViewContext.OnChange += HandleViewChanged;
+        }
+
+        await ReloadAsync();
+    }
+
+    private async Task ReloadAsync() => assignments = await Assignments.ListAssignmentsAsync(clientId: ViewContext.SelectedClientId);
+
+    private void HandleViewChanged() => InvokeAsync(async () =>
+    {
+        await ReloadAsync();
+        StateHasChanged();
+    });
+
+    public void Dispose() => ViewContext.OnChange -= HandleViewChanged;
+}

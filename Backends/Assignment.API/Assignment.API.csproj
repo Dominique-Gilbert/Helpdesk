@@ -1,0 +1,25 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+  <PropertyGroup>
+    <RootNamespace>Helpdesk.Assignments.Api</RootNamespace>
+    <AssemblyName>Assignment.API</AssemblyName>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="AutoMapper" />
+    <PackageReference Include="Grpc.AspNetCore" />
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Design">
+      <PrivateAssets>all</PrivateAssets>
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+    </PackageReference>
+    <PackageReference Include="Microsoft.Extensions.Diagnostics.HealthChecks.EntityFrameworkCore" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\Assignment.Infrastructure\Assignment.Infrastructure.csproj" />
+    <ProjectReference Include="..\..\Shared\Helpdesk.Mapping\Helpdesk.Mapping.csproj" />
+    <ProjectReference Include="..\..\Shared\Helpdesk.Messaging\Helpdesk.Messaging.csproj" />
+    <ProjectReference Include="..\..\Shared\Helpdesk.Persistence\Helpdesk.Persistence.csproj" />
+    <ProjectReference Include="..\..\Shared\Helpdesk.ServiceDefaults\Helpdesk.ServiceDefaults.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <Protobuf Include="Protos\assignment.proto" GrpcServices="Server" />
+  </ItemGroup>
+</Project>

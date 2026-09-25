@@ -1,0 +1,114 @@
+syntax = "proto3";
+
+option csharp_namespace = "Helpdesk.Users.Grpc";
+package helpdesk.users;
+
+import "google/protobuf/timestamp.proto";
+
+// Authenticates seeded demo accounts and issues JWTs. Login is the one endpoint in the whole
+// system marked [AllowAnonymous] - everything else requires a bearer token, and
+// ListUsers/CreateUser/UpdateUser additionally require the Admin role.
+//
+// GetUser/UpdateMyProfile/ChangePassword are self-service: any authenticated user may call
+// them, but only ever against their own id - the Gateway derives that id from the caller's own
+// JWT, never from client input, before calling here. UpdateMyProfile deliberately can't touch
+// Role/IsActive/TechnicianId (see UpdateUser for the admin-only equivalent of that), and
+// ChangePassword requires the caller's current password, unlike UpdateUser's admin-set
+// new_password which does not.
+service UserGrpc {
+  rpc Login (LoginRequest) returns (LoginResponse);
+  rpc ListUsers (ListUsersRequest) returns (UserListResponse);
+  rpc CreateUser (CreateUserRequest) returns (UserSummary);
+  rpc UpdateUser (UpdateUserRequest) returns (UserSummary);
+  rpc GetUser (GetUserRequest) returns (UserSummary);
+  rpc UpdateMyProfile (UpdateMyProfileRequest) returns (UserSummary);
+  rpc ChangePassword (ChangePasswordRequest) returns (UserSummary);
+  // Also [AllowAnonymous], alongside Login - the progressive/identifier-first login screen's
+  // one pre-auth lookup. Never confirms or denies that a username exists: an unknown, inactive,
+  // or unlinked username gets back the same empty client_id as a linked one whose Client has no
+  // branding set, so the only thing this can ever reveal is "does a custom brand render for this
+  // username", not whether the username itself is valid - same non-enumeration spirit as Login's
+  // single generic "Invalid username or password" for every failure mode.
+  rpc GetLoginBrandingHint (UsernameRequest) returns (UserBrandingHintResponse);
+}
+
+message LoginRequest {
+  string username = 1;
+  string password = 2;
+}
+
+message LoginResponse {
+  string token = 1;
+  google.protobuf.Timestamp expires_at_utc = 2;
+  string user_id = 3;
+  string full_name = 4;
+  string role = 5;
+  string technician_id = 6; // empty for non-Technician users
+}
+
+message ListUsersRequest {
+}
+
+message UserListResponse {
+  repeated UserSummary users = 1;
+}
+
+message CreateUserRequest {
+  string username = 1;
+  string password = 2;
+  string full_name = 3;
+  string role = 4;           // "Admin" | "BaseRole" | "Technician" | "Support"
+  string technician_id = 5;  // optional; only meaningful when role == "Technician"
+  // Always the final desired value - decided by the Gateway (BaseRole's own choice, or the
+  // creating Admin's own ClientId inherited automatically), never taken as-is from raw client
+  // input. Empty = no Client (only ever valid for a BaseRole user, or a legacy/unlinked Admin).
+  string client_id = 6;
+}
+
+message UpdateUserRequest {
+  string id = 1;
+  string full_name = 2;
+  string role = 3;
+  bool is_active = 4;
+  string technician_id = 5;  // optional; only meaningful when role == "Technician"
+  string new_password = 6;   // empty = leave the current password unchanged
+  // Same "always the final decided value" contract as CreateUserRequest.client_id - the Gateway
+  // re-sends the user's existing ClientId unchanged when the caller isn't BaseRole, since only
+  // BaseRole may change which Client a User belongs to.
+  string client_id = 7;
+}
+
+message UserSummary {
+  string id = 1;
+  string username = 2;
+  string full_name = 3;
+  string role = 4;
+  bool is_active = 5;
+  string technician_id = 6; // empty for non-Technician users
+  string email = 7;         // empty if not set
+  string client_id = 8;     // empty if not linked to a Client (always empty for BaseRole)
+}
+
+message GetUserRequest {
+  string id = 1;
+}
+
+message UpdateMyProfileRequest {
+  string id = 1;
+  string full_name = 2;
+  string email = 3;
+}
+
+message ChangePasswordRequest {
+  string id = 1;
+  string current_password = 2;
+  string new_password = 3;
+}
+
+message UsernameRequest {
+  string username = 1;
+}
+
+message UserBrandingHintResponse {
+  string client_id = 1; // empty = no hint (unknown, inactive, or Client-less username)
+}

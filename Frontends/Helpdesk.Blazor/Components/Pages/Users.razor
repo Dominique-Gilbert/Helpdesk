@@ -1,0 +1,93 @@
+@page "/users"
+@implements IDisposable
+@using Helpdesk.Blazor.Components.Subcomponents
+@using Helpdesk.Blazor.Services
+@inject UserRepo UsersRepo
+@inject ClientRepo ClientsRepo
+@inject BaseRoleViewContext ViewContext
+
+<AdminOnly>
+    <MudText Typo="Typo.h4" GutterBottom="true">Users</MudText>
+    <MudText Typo="Typo.body1" Color="Color.Secondary" Class="mb-4">
+        Add or update Admin, Technician and Support accounts.
+        @if (isBaseRole && ViewContext.SelectedClientName is { } name)
+        {
+            <text> Showing @name only - switch back to "All clients" in the profile menu to see every company.</text>
+        }
+    </MudText>
+
+    <MudButton Variant="Variant.Filled" Color="Color.Primary" Class="mb-4" OnClick="OpenCreateDrawer">
+        New user
+    </MudButton>
+
+    @if (users is null)
+    {
+        <MudText Color="Color.Secondary">Loading&hellip;</MudText>
+    }
+    else
+    {
+        <UsersDataGrid Items="users" OnEdit="OpenEditDrawer" ClientNames="@(isBaseRole ? clientNames : null)" />
+    }
+
+    <UserEditDrawer User="editingUser" IsBaseRoleViewer="isBaseRole" @bind-Open="drawerOpen" OnSaved="ReloadAsync" />
+</AdminOnly>
+
+@code {
+    private List<DtoUserSummary>? users;
+    private DtoUserSummary? editingUser;
+    private bool drawerOpen;
+
+    private bool isBaseRole;
+    private Dictionary<Guid, string> clientNames = [];
+
+    [CascadingParameter]
+    private Task<AuthenticationState>? AuthenticationStateTask { get; set; }
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (AuthenticationStateTask is not null)
+        {
+            var state = await AuthenticationStateTask;
+            isBaseRole = state.User.IsInRole("BaseRole");
+        }
+
+        // Only BaseRole can reach /client - an Admin's own view never needs this, and calling
+        // it as one would just 403. Used for the grid's Client column, not for filtering - that's
+        // the profile-menu switcher's job now (BaseRoleViewContext), shared with every other
+        // BaseRole-scoped page instead of this page carrying its own separate dropdown.
+        if (isBaseRole)
+        {
+            var clients = (await ClientsRepo.ListAsync(pageSize: 200)).items;
+            clientNames = clients.ToDictionary(c => c.id, c => c.company);
+            ViewContext.OnChange += HandleViewChanged;
+        }
+
+        await ReloadAsync();
+    }
+
+    private async Task ReloadAsync() => users = await UsersRepo.ListAsync(ViewContext.SelectedClientId);
+
+    // InvokeAsync alone marshals onto the renderer's sync context but does not itself trigger a
+    // re-render - that's only automatic for the component's own lifecycle/UI-event callbacks, not
+    // an external event subscription like this one. Same reasoning as MainLayout's own
+    // HandleThemeChanged, just with an actual reload to await first.
+    private void HandleViewChanged() => InvokeAsync(async () =>
+    {
+        await ReloadAsync();
+        StateHasChanged();
+    });
+
+    public void Dispose() => ViewContext.OnChange -= HandleViewChanged;
+
+    private void OpenCreateDrawer()
+    {
+        editingUser = null;
+        drawerOpen = true;
+    }
+
+    private void OpenEditDrawer(DtoUserSummary user)
+    {
+        editingUser = user;
+        drawerOpen = true;
+    }
+}

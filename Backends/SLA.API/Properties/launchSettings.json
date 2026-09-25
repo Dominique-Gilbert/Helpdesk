@@ -1,0 +1,12 @@
+{
+  "profiles": {
+    "SLA.API": {
+      "commandName": "Project",
+      "launchBrowser": true,
+      "environmentVariables": {
+        "ASPNETCORE_ENVIRONMENT": "Development"
+      },
+      "applicationUrl": "https://localhost:60132;http://localhost:60136"
+    }
+  }
+}

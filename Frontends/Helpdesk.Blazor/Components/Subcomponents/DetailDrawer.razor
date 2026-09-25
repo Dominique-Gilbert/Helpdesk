@@ -1,0 +1,50 @@
+@* Reusable drawer shell modeled on SuperCard's UI/Pages/Shared/Layout/Drawer.razor: a
+   temporary right-anchored MudDrawer with a brand-color top accent, a title bar, a scrollable
+   body, and an optional footer action bar. Specific drawers (e.g. TicketActionsDrawer) supply
+   their own ChildContent/FooterContent rather than this component knowing about any one domain. *@
+<MudDrawer Open="Open" OpenChanged="HandleOpenChangedAsync" Anchor="Anchor.Right" Variant="DrawerVariant.Temporary"
+           Width="@Width" Elevation="2" OverlayAutoClose="true" Class="detail-drawer-root">
+    @* A self-contained flex column, not relying on MudDrawer's own content wrapper being one -
+       that assumption bit us with the NavMenu drawer, so it's not repeated here. *@
+    <div class="detail-drawer-shell">
+        <div class="detail-drawer-header">
+            <MudText Typo="Typo.h6">@Title</MudText>
+            <MudIconButton Icon="@Icons.Material.Filled.Close" Size="Size.Small" OnClick="@(() => HandleOpenChangedAsync(false))" />
+        </div>
+        <div class="detail-drawer-body">
+            @ChildContent
+        </div>
+        @if (FooterContent is not null)
+        {
+            <div class="detail-drawer-footer">
+                @FooterContent
+            </div>
+        }
+    </div>
+</MudDrawer>
+
+@code {
+    [Parameter]
+    public string Title { get; set; } = string.Empty;
+
+    [Parameter]
+    public bool Open { get; set; }
+
+    [Parameter]
+    public EventCallback<bool> OpenChanged { get; set; }
+
+    [Parameter]
+    public string Width { get; set; } = "420px";
+
+    [Parameter]
+    public RenderFragment? ChildContent { get; set; }
+
+    [Parameter]
+    public RenderFragment? FooterContent { get; set; }
+
+    private async Task HandleOpenChangedAsync(bool value)
+    {
+        Open = value;
+        await OpenChanged.InvokeAsync(value);
+    }
+}

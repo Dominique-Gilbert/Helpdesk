@@ -1,0 +1,145 @@
+@page "/app-theme"
+@using Helpdesk.Blazor.Repositories
+@using Helpdesk.Gateway.Dto
+@using TenantTheming
+@inject UserRepo Users
+@inject TenantThemeService ThemeService
+@inject ISnackbar Snackbar
+
+@* Admin-of-a-Client only, same rule as the nav item that links here (MainLayout.isClientAdmin) -
+   this page-level guard is what actually stops someone reaching it by typing the URL directly,
+   the nav item hiding it is only cosmetic on its own. The Gateway independently re-enforces the
+   same rule regardless (see UserController.UpdateMyBranding / Client.API's UpdateClientBranding),
+   so this is a UX courtesy, not the real security boundary.
+   Fetches its own branding via GetMyBrandingAsync rather than reading MainLayout's
+   ThemeService.Branding - that avoids a real bug this had at first: isClientAdmin defaults to
+   false, so rendering the redirect decision before this page's own OnInitializedAsync (and,
+   worse, before MainLayout's own async init might have even populated ThemeService yet) fired
+   an incorrect redirect on every direct navigation to this URL. "loaded" gates the decision on
+   this component's own fetch actually finishing, not on the page's default field values. *@
+<AuthorizeView Context="authContext">
+    <Authorized>
+        @if (!loaded)
+        {
+            <MudText Color="Color.Secondary">Loading&hellip;</MudText>
+        }
+        else if (!isClientAdmin)
+        {
+            <RedirectToTickets />
+        }
+        else
+        {
+            <MudText Typo="Typo.h4" GutterBottom="true">App Theme</MudText>
+            <MudText Typo="Typo.body1" Color="Color.Secondary" Class="mb-4">
+                Changes here only affect how @(branding?.displayName ?? "your company")'s own users see this app - no one else's.
+            </MudText>
+
+            <MudGrid>
+                <MudItem xs="12" md="5">
+                    <MudPaper Class="pa-4">
+                        @if (error is not null)
+                        {
+                            <MudAlert Severity="Severity.Error" Dense="true" Class="mb-3">@error</MudAlert>
+                        }
+                        <MudStack Spacing="3">
+                            @* A branding-only override of Company, not a rename - renaming the
+                               company itself stays BaseRole's job on the Clients page. Defaults to
+                               the current Company name until an Admin changes and saves it, at
+                               which point it's what MainLayout's top-left brand text shows instead. *@
+                            <MudTextField @bind-Value="displayName" Label="Display Name" Variant="Variant.Outlined" />
+
+                            <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="2">
+                                <MudColorPicker @bind-Text="primaryColor" Label="Primary color" Placeholder="#1565C0" Style="flex:1;" />
+                                @if (!string.IsNullOrWhiteSpace(primaryColor))
+                                {
+                                    <MudAvatar Style="@($"background:{primaryColor};")" Size="Size.Small" />
+                                }
+                            </MudStack>
+
+                            <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="2">
+                                <MudTextField @bind-Value="logoUrl" Label="Logo URL" Placeholder="https://.../logo.png" FullWidth="true" Style="flex:1;" />
+                                @* Same "show what this actually looks like" pairing as the color
+                                   swatch above - a broken/typo'd URL shows as a blank circle here
+                                   rather than only being discovered in the bigger preview panel. *@
+                                @if (!string.IsNullOrWhiteSpace(logoUrl))
+                                {
+                                    <MudAvatar Size="Size.Small">
+                                        <MudImage Src="@logoUrl" ObjectFit="ObjectFit.Cover" Width="40" Height="40" />
+                                    </MudAvatar>
+                                }
+                            </MudStack>
+
+                            <MudButton Variant="Variant.Filled" Color="Color.Primary" Disabled="@busy" OnClick="SaveAsync">
+                                @(busy ? "Saving..." : "Save")
+                            </MudButton>
+                        </MudStack>
+                    </MudPaper>
+                </MudItem>
+                <MudItem xs="12" md="7">
+                    <MudText Typo="Typo.subtitle2" Class="mb-2" Color="Color.Secondary">Preview - Tickets page</MudText>
+                    <TicketsPagePreview PrimaryColor="@primaryColor" LogoUrl="@logoUrl" DisplayName="@displayName" />
+                </MudItem>
+            </MudGrid>
+        }
+    </Authorized>
+</AuthorizeView>
+
+@code {
+    private string? displayName;
+    private string? primaryColor;
+    private string? logoUrl;
+    private bool busy;
+    private string? error;
+
+    private bool loaded;
+    private bool isAdmin;
+    private DtoClientBranding? branding;
+
+    private bool isClientAdmin => isAdmin && branding is not null;
+
+    [CascadingParameter]
+    private Task<AuthenticationState>? AuthenticationStateTask { get; set; }
+
+    protected override async Task OnInitializedAsync()
+    {
+        var authState = AuthenticationStateTask is null ? null : await AuthenticationStateTask;
+        isAdmin = authState?.User.IsInRole("Admin") == true;
+
+        // Only ever call this for an Admin - a Technician/Support calling it would just get a
+        // 204 anyway (they have no path to Admin-only branding), but there's no reason to make
+        // the round trip for a caller this page is about to redirect away regardless.
+        branding = isAdmin ? await Users.GetMyBrandingAsync() : null;
+
+        displayName = branding?.displayName;
+        primaryColor = branding?.primaryColor;
+        logoUrl = branding?.logoUrl;
+        loaded = true;
+    }
+
+    private async Task SaveAsync()
+    {
+        error = null;
+        busy = true;
+        try
+        {
+            await Users.UpdateMyBrandingAsync(new UpdateMyBrandingDto
+            {
+                displayName = string.IsNullOrWhiteSpace(displayName) ? null : displayName.Trim(),
+                primaryColor = string.IsNullOrWhiteSpace(primaryColor) ? null : primaryColor.Trim(),
+                logoUrl = string.IsNullOrWhiteSpace(logoUrl) ? null : logoUrl.Trim()
+            });
+
+            // Re-applies immediately app-wide - no logout/login needed to see the new look take effect.
+            await ThemeService.RefreshAsync();
+            Snackbar.Add("App theme updated.", Severity.Success);
+        }
+        catch (Exception ex) when (ex is not Microsoft.AspNetCore.Components.NavigationException)
+        {
+            error = ex.Message;
+        }
+        finally
+        {
+            busy = false;
+        }
+    }
+}

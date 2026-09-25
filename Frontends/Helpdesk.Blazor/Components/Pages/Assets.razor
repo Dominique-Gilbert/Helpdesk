@@ -1,0 +1,77 @@
+@page "/assets"
+@implements IDisposable
+@using Helpdesk.Blazor.Components.Subcomponents
+@using Helpdesk.Blazor.Services
+@inject AssetRepo AssetsRepo
+@inject BaseRoleViewContext ViewContext
+
+<AdminOnly>
+    <MudStack Row="true" AlignItems="AlignItems.Center" Justify="Justify.SpaceBetween" Class="mb-4">
+        <div>
+            <MudText Typo="Typo.h4" GutterBottom="true">Assets</MudText>
+            <MudText Typo="Typo.body1" Color="Color.Secondary">Equipment inventory, owned by Asset.API.</MudText>
+        </div>
+        <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="() => OpenAssetDrawerAsync(null)">
+            New asset
+        </MudButton>
+    </MudStack>
+
+    @if (page is null)
+    {
+        <MudText Color="Color.Secondary">Loading&hellip;</MudText>
+    }
+    else
+    {
+        <AssetsDataGrid Items="page.items"
+                         OnEdit="asset => OpenAssetDrawerAsync(asset)"
+                         OnAssign="asset => OpenAssignDrawerAsync(asset)" />
+    }
+</AdminOnly>
+
+<AssetDrawer Asset="assetDrawerAsset" @bind-Open="assetDrawerOpen" OnSaved="ReloadAsync" />
+<AssignAssetDrawer Asset="assignDrawerAsset" @bind-Open="assignDrawerOpen" OnSaved="ReloadAsync" />
+
+@code {
+    private DtoAssetPage? page;
+
+    private DtoAsset? assetDrawerAsset;
+    private bool assetDrawerOpen;
+
+    private DtoAsset? assignDrawerAsset;
+    private bool assignDrawerOpen;
+
+    protected override async Task OnInitializedAsync()
+    {
+        // BaseRole's profile-menu switcher - reload this grid whenever it changes Client.
+        ViewContext.OnChange += HandleViewChanged;
+        await ReloadAsync();
+    }
+
+    private async Task ReloadAsync() => page = await AssetsRepo.ListAsync(clientId: ViewContext.SelectedClientId);
+
+    // InvokeAsync alone marshals onto the renderer's sync context but does not itself trigger a
+    // re-render - that's only automatic for the component's own lifecycle/UI-event callbacks, not
+    // an external event subscription like this one. Same reasoning as MainLayout's own
+    // HandleThemeChanged, just with an actual reload to await first.
+    private void HandleViewChanged() => InvokeAsync(async () =>
+    {
+        await ReloadAsync();
+        StateHasChanged();
+    });
+
+    public void Dispose() => ViewContext.OnChange -= HandleViewChanged;
+
+    private Task OpenAssetDrawerAsync(DtoAsset? asset)
+    {
+        assetDrawerAsset = asset;
+        assetDrawerOpen = true;
+        return Task.CompletedTask;
+    }
+
+    private Task OpenAssignDrawerAsync(DtoAsset asset)
+    {
+        assignDrawerAsset = asset;
+        assignDrawerOpen = true;
+        return Task.CompletedTask;
+    }
+}

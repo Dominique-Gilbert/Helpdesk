@@ -1,0 +1,29 @@
+@using Helpdesk.Gateway.Dto
+
+<MudDataGrid Items="@Items" Hover="true" Dense="true" FixedHeader="true" RowsPerPage="15" Class="@($"helpdesk-table {Class}")">
+    <Columns>
+        <PropertyColumn Property="x => x.company" Title="Company" />
+        <PropertyColumn Property="x => x.name" Title="Name" />
+        <PropertyColumn Property="x => x.email" Title="Email" />
+        <PropertyColumn Property="x => x.contactNumber" Title="Contact number" />
+        <TemplateColumn Title="" Sortable="false">
+            <CellTemplate>
+                <MudIconButton Icon="@Icons.Material.Filled.Edit" Size="Size.Small" OnClick="@(() => OnEdit.InvokeAsync(context.Item))" />
+            </CellTemplate>
+        </TemplateColumn>
+    </Columns>
+    <PagerContent>
+        <MudDataGridPager T="DtoClient" />
+    </PagerContent>
+</MudDataGrid>
+
+@code {
+    [Parameter, EditorRequired]
+    public IEnumerable<DtoClient> Items { get; set; } = [];
+
+    [Parameter]
+    public EventCallback<DtoClient> OnEdit { get; set; }
+
+    [Parameter]
+    public string? Class { get; set; }
+}

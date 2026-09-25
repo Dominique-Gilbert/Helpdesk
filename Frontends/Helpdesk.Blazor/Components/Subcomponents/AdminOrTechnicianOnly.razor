@@ -1,0 +1,22 @@
+@* Wraps a page's content and bounces Support to /tickets instead of rendering it - same
+   reasoning as AdminOnly: the NavMenu already hides the link for Support, but that's cosmetic
+   on its own; this is what actually stops Support typing the URL directly. Completed Tickets
+   is the one page Technicians get that Support does not, so it needs its own guard rather
+   than reusing AdminOnly. *@
+<AuthorizeView Context="restrictAuthContext">
+    <Authorized>
+        @if (restrictAuthContext.User.IsInRole("Support"))
+        {
+            <RedirectToTickets />
+        }
+        else
+        {
+            @ChildContent
+        }
+    </Authorized>
+</AuthorizeView>
+
+@code {
+    [Parameter]
+    public RenderFragment? ChildContent { get; set; }
+}

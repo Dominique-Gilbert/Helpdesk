@@ -1,0 +1,60 @@
+@page "/technicians"
+@implements IDisposable
+@using Helpdesk.Blazor.Components.Subcomponents
+@using Helpdesk.Blazor.Services
+@inject AssignmentRepo Assignments
+@inject BaseRoleViewContext ViewContext
+
+<AdminOnly>
+    <HelpdeskBreadcrumbs BreadcrumbItems="breadcrumbs" />
+
+    <MudText Typo="Typo.h4" GutterBottom="true">Technicians</MudText>
+    <MudText Typo="Typo.body1" Color="Color.Secondary" Class="mb-4">The roster who can be assigned a new ticket.</MudText>
+
+    @if (technicians is null)
+    {
+        <MudText Color="Color.Secondary">Loading&hellip;</MudText>
+    }
+    else
+    {
+        <TechniciansDataGrid Items="technicians" OnView="technician => OpenWorkloadAsync(technician)" />
+    }
+</AdminOnly>
+
+<TechnicianWorkloadDrawer Technician="workloadTechnician" @bind-Open="workloadDrawerOpen" />
+
+@code {
+    private readonly List<BreadcrumbItem> breadcrumbs = ManagementBreadcrumbs.For("/technicians");
+    private List<DtoTechnician>? technicians;
+
+    private DtoTechnician? workloadTechnician;
+    private bool workloadDrawerOpen;
+
+    protected override async Task OnInitializedAsync()
+    {
+        // BaseRole's profile-menu switcher - reload this grid whenever it changes Client.
+        ViewContext.OnChange += HandleViewChanged;
+        await ReloadAsync();
+    }
+
+    private async Task ReloadAsync() => technicians = await Assignments.ListTechniciansAsync(clientId: ViewContext.SelectedClientId);
+
+    // InvokeAsync alone marshals onto the renderer's sync context but does not itself trigger a
+    // re-render - that's only automatic for the component's own lifecycle/UI-event callbacks, not
+    // an external event subscription like this one. Same reasoning as MainLayout's own
+    // HandleThemeChanged, just with an actual reload to await first.
+    private void HandleViewChanged() => InvokeAsync(async () =>
+    {
+        await ReloadAsync();
+        StateHasChanged();
+    });
+
+    public void Dispose() => ViewContext.OnChange -= HandleViewChanged;
+
+    private Task OpenWorkloadAsync(DtoTechnician technician)
+    {
+        workloadTechnician = technician;
+        workloadDrawerOpen = true;
+        return Task.CompletedTask;
+    }
+}

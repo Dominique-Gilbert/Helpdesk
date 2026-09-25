@@ -1,0 +1,20 @@
+@* Wraps a page's content and bounces Technicians/Support to /tickets instead of rendering it -
+   the NavMenu already hides these links for those roles, but that's cosmetic on its own; this is
+   what actually stops one of them typing the URL directly. *@
+<AuthorizeView Context="restrictAuthContext">
+    <Authorized>
+        @if (!(restrictAuthContext.User.IsInRole("Admin") || restrictAuthContext.User.IsInRole("BaseRole")))
+        {
+            <RedirectToTickets />
+        }
+        else
+        {
+            @ChildContent
+        }
+    </Authorized>
+</AuthorizeView>
+
+@code {
+    [Parameter]
+    public RenderFragment? ChildContent { get; set; }
+}

@@ -1,0 +1,93 @@
+syntax = "proto3";
+
+option csharp_namespace = "Helpdesk.Assets.Grpc";
+package helpdesk.assets;
+
+import "google/protobuf/timestamp.proto";
+
+// Equipment inventory and the record of who holds what.
+service AssetGrpc {
+  rpc CreateAsset (CreateAssetRequest) returns (AssetResponse);
+  rpc GetAsset (AssetRequest) returns (AssetResponse);
+  rpc ListAssets (ListAssetsRequest) returns (AssetListResponse);
+  // Editable-field update. Empty string = no change. Status here is restricted to
+  // Retired/InRepair/InStock - Assigned can only be reached through AssignAsset, which is the
+  // only path that validates a technician and opens an AssignmentRecord.
+  rpc UpdateAsset (UpdateAssetRequest) returns (AssetResponse);
+  // Validates the technician against Assignment.API over gRPC before writing.
+  rpc AssignAsset (AssignAssetRequest) returns (AssetResponse);
+  rpc ReturnAsset (ReturnAssetRequest) returns (AssetResponse);
+}
+
+message AssetRequest {
+  string id = 1;
+}
+
+message CreateAssetRequest {
+  string tag = 1;
+  string name = 2;
+  string serial_number = 3;
+  string type = 4;
+  string location = 5;
+}
+
+message UpdateAssetRequest {
+  string id = 1;
+  string name = 2;
+  string serial_number = 3;
+  string location = 4;
+  string type = 5;
+  string status = 6;
+}
+
+message ListAssetsRequest {
+  string status = 1;
+  string type = 2;  
+  int32 page = 3;
+  int32 page_size = 4;
+}
+
+message AssignAssetRequest {
+  string asset_id = 1;
+  string ticket_id = 2;  
+  string technician_id = 3; 
+  string assigned_to = 4;
+  string notes = 5;
+}
+
+message ReturnAssetRequest {
+  string asset_id = 1;
+  string notes = 2;
+}
+
+message AssignmentRecordMessage {
+  string id = 1;
+  string asset_id = 2;
+  string ticket_id = 3;
+  string technician_id = 4;
+  string assigned_to = 5;
+  string notes = 6;
+  google.protobuf.Timestamp assigned_at_utc = 7;
+  google.protobuf.Timestamp returned_at_utc = 8;
+}
+
+message AssetResponse {
+  string id = 1;
+  string tag = 2;
+  string name = 3;
+  string serial_number = 4;
+  string location = 5;
+  string type = 6;
+  string status = 7;
+  google.protobuf.Timestamp purchased_on_utc = 8;
+  google.protobuf.Timestamp created_at_utc = 9;
+  repeated AssignmentRecordMessage assignment_records = 10;
+  string client_id = 11;
+}
+
+message AssetListResponse {
+  repeated AssetResponse assets = 1;
+  int32 total = 2;
+  int32 page = 3;
+  int32 page_size = 4;
+}

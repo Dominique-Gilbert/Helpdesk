@@ -1,0 +1,94 @@
+@using Helpdesk.Gateway.Dto
+
+@* "Most Recent" banner is exclusive to Tickets - modeled on SuperCard's mini-statement header,
+   recolored from SuperCard's teal to Helpdesk red. *@
+<div class="most-recent-card @Class">
+    <div class="most-recent-banner">Most Recent Tickets</div>
+    <MudDataGrid Items="@Items" Hover="true" Dense="true" FixedHeader="true" RowsPerPage="15" Class="helpdesk-table">
+        <Columns>
+            <TemplateColumn Title="Reference">
+                <CellTemplate><code>@context.Item.reference</code></CellTemplate>
+            </TemplateColumn>
+            <PropertyColumn Property="x => x.title" Title="Title" />
+            <PropertyColumn Property="x => x.category" Title="Category" />
+            <PropertyColumn Property="x => x.priority" Title="Priority" />
+            <TemplateColumn Title="Status">
+                <CellTemplate>
+                    <MudChip T="string" Size="Size.Small" Color="@StatusColor(context.Item.status)">@context.Item.status</MudChip>
+                </CellTemplate>
+            </TemplateColumn>
+            <TemplateColumn Title="SLA" Sortable="false">
+                <CellTemplate>
+                    @{
+                        var clock = SlaClocksByTicketId?.GetValueOrDefault(context.Item.id);
+                        var background = SlaChipStyle.BackgroundFor(clock);
+                    }
+                    @if (context.Item.slaBreached || clock?.status == "Breached")
+                    {
+                        <MudChip T="string" Size="Size.Small" Color="Color.Error">breached</MudChip>
+                    }
+                    else if (background is not null)
+                    {
+                        @* Inline style, not a Color enum value - a continuous fade as the clock
+                           runs down, not a handful of fixed steps. *@
+                        <MudChip T="string" Size="Size.Small" Style="@background">within target</MudChip>
+                    }
+                    else
+                    {
+                        <MudChip T="string" Size="Size.Small" Color="Color.Success">within target</MudChip>
+                    }
+                </CellTemplate>
+            </TemplateColumn>
+            <TemplateColumn Title="" Sortable="false">
+                <CellTemplate>
+                    <MudStack Row="true" Spacing="2">
+                        <MudButton Variant="Variant.Outlined" Size="Size.Small" Disabled="@OverviewBusy"
+                                   OnClick="() => OnOverview.InvokeAsync(context.Item.id)">
+                            @(OverviewBusy && SelectedId == context.Item.id ? "Loading..." : "Overview")
+                        </MudButton>
+                        <MudButton Variant="Variant.Outlined" Color="Color.Primary" Size="Size.Small"
+                                   OnClick="() => OnDetails.InvokeAsync(context.Item.id)">
+                            Details
+                        </MudButton>
+                    </MudStack>
+                </CellTemplate>
+            </TemplateColumn>
+        </Columns>
+        <PagerContent>
+            <MudDataGridPager T="DtoTicket" />
+        </PagerContent>
+    </MudDataGrid>
+</div>
+
+@code {
+    [Parameter, EditorRequired]
+    public IEnumerable<DtoTicket> Items { get; set; } = [];
+
+    /// <summary>Optional - when supplied, the SLA chip fades from green to red based on time
+    /// left instead of the plain breached/within-target split. Missing entries (ticket not yet
+    /// processed by SLA.API, or the caller chose not to fetch clocks) fall back to that split.</summary>
+    [Parameter]
+    public Dictionary<Guid, DtoSlaClock>? SlaClocksByTicketId { get; set; }
+
+    [Parameter]
+    public Guid? SelectedId { get; set; }
+
+    [Parameter]
+    public bool OverviewBusy { get; set; }
+
+    [Parameter]
+    public EventCallback<Guid> OnOverview { get; set; }
+
+    [Parameter]
+    public EventCallback<Guid> OnDetails { get; set; }
+
+    [Parameter]
+    public string? Class { get; set; }
+
+    private static Color StatusColor(string status) => status switch
+    {
+        "Closed" or "Completed" => Color.Default,
+        "Reopened" => Color.Warning,
+        _ => Color.Primary
+    };
+}

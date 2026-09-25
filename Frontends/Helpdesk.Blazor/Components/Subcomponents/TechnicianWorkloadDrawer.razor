@@ -1,0 +1,210 @@
+@using Helpdesk.Blazor.Repositories
+@using Helpdesk.Gateway.Dto
+@inject AssignmentRepo Assignments
+@inject TicketRepo TicketsRepo
+@inject SlaRepo Slas
+
+@* Read-only: this is a visibility window into a technician's workload, not an editing surface -
+   reassigning or closing tickets stays on the Tickets page where those actions already live. *@
+<DetailDrawer Title="@(Technician is null ? "Workload" : $"{Technician.fullName}'s workload")" Open="Open" OpenChanged="OpenChanged" Width="480px">
+    <ChildContent>
+        @if (Technician is not null)
+        {
+            <MudTabs Class="helpdesk-tabs">
+                <MudTabPanel Text="Assigned tickets">
+                    @if (loading)
+                    {
+                        <MudText Color="Color.Secondary">Loading&hellip;</MudText>
+                    }
+                    else if (assignments.Count == 0)
+                    {
+                        <MudText Color="Color.Secondary">Nothing currently assigned.</MudText>
+                    }
+                    else
+                    {
+                        @foreach (var assignment in assignments)
+                        {
+                            var clock = clocksByTicketId.GetValueOrDefault(assignment.ticketId);
+                            var isExpanded = expandedTicketIds.Contains(assignment.ticketId);
+
+                            <MudPaper Class="pa-3 mb-2" Elevation="1">
+                                <MudStack Row="true" Justify="Justify.SpaceBetween" AlignItems="AlignItems.Start">
+                                    <div>
+                                        <MudText Typo="Typo.subtitle2"><code>@assignment.ticketReference</code></MudText>
+                                        <MudStack Row="true" Spacing="1" Class="mt-1">
+                                            <MudChip T="string" Size="Size.Small">@assignment.category</MudChip>
+                                            <MudChip T="string" Size="Size.Small">@assignment.priority</MudChip>
+                                        </MudStack>
+                                    </div>
+                                    <MudIconButton Icon="@Icons.Material.Filled.Visibility" Size="Size.Small"
+                                                   OnClick="() => ToggleCommentsAsync(assignment.ticketId)" />
+                                </MudStack>
+
+                                @if (clock is null)
+                                {
+                                    <MudText Typo="Typo.caption" Color="Color.Secondary" Class="d-block mt-2">No SLA clock yet.</MudText>
+                                }
+                                else
+                                {
+                                    <MudChip T="string" Size="Size.Small" Class="mt-2"
+                                             Style="@SlaChipStyle.BackgroundFor(clock)">
+                                        @(clock.status == "Stopped" ? "Stopped" : SlaTimeFormat.FormatRemaining(clock.remainingSeconds))
+                                    </MudChip>
+                                }
+
+                                @if (isExpanded)
+                                {
+                                    <MudDivider Class="my-2" />
+                                    if (!ticketDetails.TryGetValue(assignment.ticketId, out var ticket))
+                                    {
+                                        <MudText Typo="Typo.caption" Color="Color.Secondary">Loading comments&hellip;</MudText>
+                                    }
+                                    else if (ticket.comments.Count == 0)
+                                    {
+                                        <MudText Typo="Typo.caption" Color="Color.Secondary">No comments yet.</MudText>
+                                    }
+                                    else
+                                    {
+                                        <MudStack Spacing="1">
+                                            @foreach (var comment in ticket.comments.OrderByDescending(c => c.createdAtUtc))
+                                            {
+                                                <MudPaper Class="pa-2" Elevation="0" Style="background:var(--mud-palette-background-gray);">
+                                                    <MudText Typo="Typo.caption" Color="Color.Secondary">@comment.author &middot; @comment.createdAtUtc.ToString("u")</MudText>
+                                                    <MudText Typo="Typo.body2">@comment.body</MudText>
+                                                </MudPaper>
+                                            }
+                                        </MudStack>
+                                    }
+                                }
+                            </MudPaper>
+                        }
+                    }
+                </MudTabPanel>
+
+                <MudTabPanel Text="Backlog">
+                    <MudText Typo="Typo.caption" Color="Color.Secondary" Class="mb-2 d-block">
+                        Tickets @Technician.fullName is skilled for, queued because every eligible technician - possibly including them - was full when routing ran.
+                    </MudText>
+
+                    @if (loading)
+                    {
+                        <MudText Color="Color.Secondary">Loading&hellip;</MudText>
+                    }
+                    else if (eligibleBacklog.Count == 0)
+                    {
+                        <MudText Color="Color.Secondary">Nothing backlogged that matches their skills.</MudText>
+                    }
+                    else
+                    {
+                        @foreach (var entry in eligibleBacklog)
+                        {
+                            <MudPaper Class="pa-3 mb-2" Elevation="1">
+                                <MudText Typo="Typo.subtitle2"><code>@entry.ticketReference</code></MudText>
+                                <MudStack Row="true" Spacing="1" Class="mt-1">
+                                    <MudChip T="string" Size="Size.Small">@entry.category</MudChip>
+                                    <MudChip T="string" Size="Size.Small">@entry.priority</MudChip>
+                                    <MudChip T="string" Size="Size.Small" Color="Color.Warning">needs @entry.startingLevel+</MudChip>
+                                </MudStack>
+                                <MudText Typo="Typo.caption" Color="Color.Secondary" Class="d-block mt-2">
+                                    Queued @entry.queuedAtUtc.ToString("u")
+                                </MudText>
+                                @if (!string.IsNullOrWhiteSpace(entry.commentText))
+                                {
+                                    <MudText Typo="Typo.body2" Class="mt-1">@entry.commentText</MudText>
+                                }
+                            </MudPaper>
+                        }
+                    }
+                </MudTabPanel>
+            </MudTabs>
+        }
+    </ChildContent>
+</DetailDrawer>
+
+@code {
+    private static readonly string[] levelOrder = ["Low", "Normal", "High", "Critical"];
+
+    [Parameter]
+    public DtoTechnician? Technician { get; set; }
+
+    [Parameter]
+    public bool Open { get; set; }
+
+    [Parameter]
+    public EventCallback<bool> OpenChanged { get; set; }
+
+    private bool loading;
+    private List<DtoAssignment> assignments = [];
+    private List<DtoBacklogEntry> eligibleBacklog = [];
+    private readonly Dictionary<Guid, DtoSlaClock?> clocksByTicketId = [];
+    private readonly Dictionary<Guid, DtoTicket> ticketDetails = [];
+    private readonly HashSet<Guid> expandedTicketIds = [];
+
+    private bool wasOpen;
+
+    // Reloads on every closed -> open transition, not just when the technician changes: unlike
+    // an edit drawer's own fields, workload/backlog are a live view of state that keeps moving
+    // (tickets close, capacity frees up) between one open and the next, even for the same tech.
+    protected override async Task OnParametersSetAsync()
+    {
+        if (Open && !wasOpen && Technician is not null)
+        {
+            expandedTicketIds.Clear();
+            ticketDetails.Clear();
+            await LoadAsync(Technician);
+        }
+
+        wasOpen = Open;
+    }
+
+    private async Task LoadAsync(DtoTechnician technician)
+    {
+        loading = true;
+        try
+        {
+            assignments = await Assignments.ListAssignmentsAsync(technician.id);
+
+            var clocks = await Task.WhenAll(assignments.Select(a => Slas.GetForTicketAsync(a.ticketId)));
+            clocksByTicketId.Clear();
+            for (var i = 0; i < assignments.Count; i++) clocksByTicketId[assignments[i].ticketId] = clocks[i];
+
+            var backlog = await Assignments.ListBacklogAsync();
+            eligibleBacklog = backlog.Where(entry => TechnicianCouldServe(technician, entry))
+                .OrderBy(entry => entry.queuedAtUtc)
+                .ToList();
+        }
+        finally
+        {
+            loading = false;
+        }
+    }
+
+    // Mirrors AssignmentTicketClosedConsumer's own retry check (see AssignmentBacklogEntry) -
+    // a technician "could serve" an entry if they're leveled for its category at or above the
+    // tier the ticket started at. Team plays no part: LevelRoutingMatcher routes by category
+    // level alone, not team.
+    private static bool TechnicianCouldServe(DtoTechnician technician, DtoBacklogEntry entry)
+    {
+        var entryLevelIndex = Array.IndexOf(levelOrder, entry.startingLevel);
+        if (entryLevelIndex < 0) return false;
+
+        return technician.categoryLevels.Any(level =>
+            string.Equals(level.category, entry.category, StringComparison.OrdinalIgnoreCase)
+            && Array.IndexOf(levelOrder, level.level) >= entryLevelIndex);
+    }
+
+    private async Task ToggleCommentsAsync(Guid ticketId)
+    {
+        if (!expandedTicketIds.Add(ticketId))
+        {
+            expandedTicketIds.Remove(ticketId);
+            return;
+        }
+
+        if (!ticketDetails.ContainsKey(ticketId))
+        {
+            var ticket = await TicketsRepo.GetAsync(ticketId);
+            if (ticket is not null) ticketDetails[ticketId] = ticket;
+        }
+    }
+}

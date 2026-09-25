@@ -1,0 +1,39 @@
+@using Helpdesk.Gateway.Dto
+
+<MudDataGrid Items="@Items" Hover="true" Dense="true" FixedHeader="true" RowsPerPage="15" Class="@($"helpdesk-table {Class}")">
+    <Columns>
+        <TemplateColumn Title="Ticket">
+            <CellTemplate><code>@context.Item.ticketReference</code></CellTemplate>
+        </TemplateColumn>
+        <PropertyColumn Property="x => x.technicianName" Title="Technician" />
+        <PropertyColumn Property="x => x.priority" Title="Priority" />
+        @* BaseRole-only - see RoutingRulesDataGrid/UsersDataGrid for the same rule. *@
+        @if (ClientNames is not null)
+        {
+            <TemplateColumn Title="Client" Sortable="false">
+                <CellTemplate>
+                    @(context.Item.clientId is { } id && ClientNames.TryGetValue(id, out var name) ? name : "-")
+                </CellTemplate>
+            </TemplateColumn>
+        }
+        <TemplateColumn Title="Why" Sortable="false">
+            <CellTemplate>
+                <MudText Typo="Typo.caption" Color="Color.Secondary">@context.Item.explanation</MudText>
+            </CellTemplate>
+        </TemplateColumn>
+    </Columns>
+    <PagerContent>
+        <MudDataGridPager T="DtoAssignment" />
+    </PagerContent>
+</MudDataGrid>
+
+@code {
+    [Parameter, EditorRequired]
+    public IEnumerable<DtoAssignment> Items { get; set; } = [];
+
+    [Parameter]
+    public string? Class { get; set; }
+
+    [Parameter]
+    public IReadOnlyDictionary<Guid, string>? ClientNames { get; set; }
+}

@@ -1,0 +1,150 @@
+@using Helpdesk.Blazor.Repositories
+@using Helpdesk.Gateway.Dto
+@inject AssetRepo AssetsRepo
+@inject AssignmentRepo Assignments
+
+<DetailDrawer Title="@($"Assign {Asset?.tag}")" Open="Open" OpenChanged="OpenChanged">
+    <ChildContent>
+        @if (Asset is not null)
+        {
+            <MudStack Spacing="3">
+                @if (error is not null)
+                {
+                    <MudAlert Severity="Severity.Error" Dense="true">@error</MudAlert>
+                }
+
+                @if (Asset.currentHolder is not null)
+                {
+                    <MudText Typo="Typo.body2">
+                        Currently held by <strong>@Asset.currentHolder.assignedTo</strong>
+                        since @Asset.currentHolder.assignedAtUtc.ToString("u")
+                    </MudText>
+                    <MudTextField @bind-Value="notes" Label="Return notes" Lines="2" FullWidth="true" />
+                }
+                else
+                {
+                    <MudSelect T="Guid?" @bind-Value="technicianId" Label="Technician" FullWidth="true"
+                               HelperText="Who this asset is being handed to.">
+                        @foreach (var technician in technicians)
+                        {
+                            <MudSelectItem T="Guid?" Value="@technician.id">@technician.fullName (@technician.team)</MudSelectItem>
+                        }
+                    </MudSelect>
+
+                    <MudTextField @bind-Value="assignedTo" Label="Assigned to (override)"
+                                  HelperText="Leave blank to use the technician's name." FullWidth="true" />
+
+                    <MudTextField @bind-Value="notes" Label="Notes" Lines="2" FullWidth="true" />
+                }
+            </MudStack>
+        }
+    </ChildContent>
+    <FooterContent>
+        @if (Asset?.currentHolder is not null)
+        {
+            <MudButton Variant="Variant.Filled" Color="Color.Primary" FullWidth="true" Disabled="@busy" OnClick="ReturnAsync">
+                @(busy ? "Returning..." : "Return")
+            </MudButton>
+        }
+        else
+        {
+            <MudButton Variant="Variant.Filled" Color="Color.Primary" FullWidth="true"
+                       Disabled="@(busy || (technicianId is null && string.IsNullOrWhiteSpace(assignedTo)))" OnClick="AssignAsync">
+                @(busy ? "Assigning..." : "Assign")
+            </MudButton>
+        }
+    </FooterContent>
+</DetailDrawer>
+
+@code {
+    [Parameter]
+    public DtoAsset? Asset { get; set; }
+
+    [Parameter]
+    public bool Open { get; set; }
+
+    [Parameter]
+    public EventCallback<bool> OpenChanged { get; set; }
+
+    [Parameter]
+    public EventCallback OnSaved { get; set; }
+
+    private List<DtoTechnician> technicians = [];
+    private Guid? technicianId;
+    private string assignedTo = string.Empty;
+    private string notes = string.Empty;
+
+    private bool busy;
+    private string? error;
+    private bool wasOpen;
+
+    // Reset only on the closed -> open transition - see UserEditDrawer for why.
+    protected override async Task OnParametersSetAsync()
+    {
+        if (Open && !wasOpen)
+        {
+            error = null;
+            technicianId = null;
+            assignedTo = string.Empty;
+            notes = string.Empty;
+
+            if (Asset?.currentHolder is null)
+            {
+                technicians = await Assignments.ListTechniciansAsync();
+            }
+        }
+
+        wasOpen = Open;
+    }
+
+    private async Task AssignAsync()
+    {
+        if (Asset is null) return;
+
+        error = null;
+        busy = true;
+        try
+        {
+            await AssetsRepo.AssignAsync(Asset.id, new AssignAssetDto
+            {
+                technicianId = technicianId,
+                assignedTo = assignedTo.Trim(),
+                notes = notes.Trim()
+            });
+
+            await OnSaved.InvokeAsync();
+            await OpenChanged.InvokeAsync(false);
+        }
+        catch (Exception ex) when (ex is not Microsoft.AspNetCore.Components.NavigationException)
+        {
+            error = ex.Message;
+        }
+        finally
+        {
+            busy = false;
+        }
+    }
+
+    private async Task ReturnAsync()
+    {
+        if (Asset is null) return;
+
+        error = null;
+        busy = true;
+        try
+        {
+            await AssetsRepo.ReturnAsync(Asset.id, notes.Trim());
+
+            await OnSaved.InvokeAsync();
+            await OpenChanged.InvokeAsync(false);
+        }
+        catch (Exception ex) when (ex is not Microsoft.AspNetCore.Components.NavigationException)
+        {
+            error = ex.Message;
+        }
+        finally
+        {
+            busy = false;
+        }
+    }
+}
