@@ -99,7 +99,7 @@ Inside the compose network every service listens on `8080` (HTTP/1.1: health, RE
 cannot share a port reliably. Host mappings are in `docker-compose.yml`; running outside
 Docker uses the 51xx range from each `appsettings.json` so all six can run at once.
 
-## Known gaps (be honest about these in the PR)
+## To fix in future
 
 - `Ticket.API` publishes after `SaveChangesAsync`, with no transactional outbox. A crash
   between the two loses the event. MassTransit's EF Core outbox is the fix; out of scope
