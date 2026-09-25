@@ -1,9 +1,8 @@
 # IT Helpdesk & Assets
 
 Training Project 5 of 9 - solo build. Local-only, no cloud.
-Check-in Fri 2026-09-18 (skeleton up) - Deadline Fri 2026-09-25 (full pipeline).
 
-Same architecture discipline as HRPM and SupercardServices: independently deployable
+Independently deployable
 domains, gRPC between them, one REST gateway in front, EF Core per service, an async
 event pipeline for the one thing that crosses a service boundary, Docker for the lot.
 
